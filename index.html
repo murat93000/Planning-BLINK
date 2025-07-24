@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planning Hebdomadaire - Version Cloud</title>
+    <title>Planning BLINK - Version Cloud</title>
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -874,8 +874,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📅 Planning Hebdomadaire Cloud</h1>
-            <p>Système de gestion d'équipe avec synchronisation cloud Firebase</p>
+            <h1>📅 Planning BLINK Cloud</h1>
+            <p>Système de gestion d'équipe boutique BLINK avec synchronisation cloud Firebase</p>
             <div id="connectionStatus" style="margin-top: 10px; padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 600;">
                 <span id="statusText">🔄 Connexion en cours...</span>
                 <span id="userInfo" style="margin-left: 10px;"></span>
@@ -1371,7 +1371,7 @@
                 // 💾 SAUVEGARDE : Envoyer à Firebase
                 console.log('💾 Début sauvegarde Firebase...');
                 
-                db.collection('plannings').doc('main').set(dataToSave)
+                db.collection('plannings').doc('blink').set(dataToSave)
                     .then(() => {
                         showToast(`☁️ Sauvegardé sur le cloud ! (${sizeKB} KB)`, 'success');
                         console.log('✅ Sauvegarde cloud réussie');
@@ -1414,7 +1414,7 @@
             }
 
             // Charger depuis le document partagé "main"
-            db.collection('plannings').doc('main').get()
+            db.collection('plannings').doc('blink').get()
                 .then((doc) => {
                     if (doc.exists) {
                         const cloudData = doc.data();
@@ -1464,7 +1464,7 @@
                 showToast('🔄 Rechargement en cours...', 'success');
                 
                 // Forcer le rechargement
-                db.collection('plannings').doc('main').get()
+                db.collection('plannings').doc('blink').get()
                     .then((doc) => {
                         if (doc.exists) {
                             const cloudData = doc.data();
