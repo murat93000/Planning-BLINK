@@ -1470,6 +1470,17 @@
 
                         renderPlanning();
                         updateSummary();
+                        
+                        // ✅ SAUVEGARDER LOCALEMENT après sync cloud
+                        localStorage.setItem('planning_data', JSON.stringify({
+                            employees: globalState.employees,
+                            customTemplates: globalState.customTemplates,
+                            timeSlots: globalState.timeSlots,
+                            weekTemplates: globalState.weekTemplates,
+                            lastSave: cloudData.lastSave,
+                            version: cloudData.version
+                        }));
+                        
                         showToast('📡 Données synchronisées depuis le cloud', 'success');
                     } else {
                         console.log('❌ Aucune donnée cloud trouvée dans "main"');
@@ -1628,15 +1639,22 @@ let isEmployeeAuthenticated = false;
     // Vérifier l'authentification employé d'abord
     checkEmployeeAuthentication();
     
-    // Charger les données (local d'abord, puis cloud si connecté)
-    loadData();
-    
-    // Activer l'auto-sauvegarde cloud si possible
-    setTimeout(() => {
-        if (isFirebaseEnabled && currentUser) {
-            enableAutoSaveCloud();
-        }
-    }, 2000);
+    // ⚠️ ATTENDRE Firebase avant de charger les données
+    if (isFirebaseEnabled) {
+        console.log('⏳ Attente de Firebase Auth...');
+        // Attendre que Firebase soit prêt
+        setTimeout(() => {
+            loadData(); // Chargera depuis Cloud si connecté
+            
+            // Activer l'auto-sauvegarde
+            if (currentUser) {
+                enableAutoSaveCloud();
+            }
+        }, 1500);
+    } else {
+        // Mode local uniquement
+        loadData();
+    }
             
             showToast('Planning initialisé avec succès', 'success');
         }
@@ -3319,20 +3337,28 @@ function handleEmployeeAuthSubmit(e) {
         }
 
         function loadData() {
-            try {
-                let loadedData = null;
-                
-                // Charger depuis localStorage
-                try {
-                    const localData = localStorage.getItem('planning_data');
-                    if (localData) {
-                        loadedData = JSON.parse(localData);
-                    }
-                } catch (e) {
-                    console.warn('localStorage non disponible');
-                }
-                
-                if (loadedData) {
+    try {
+        // 🔥 PRIORITÉ AU CLOUD : Attendre Firebase d'abord
+        if (isFirebaseEnabled && currentUser) {
+            console.log('⏳ Chargement depuis Firebase prioritaire...');
+            loadFromCloud();
+            return; // Ne pas charger le localStorage si Firebase est dispo
+        }
+        
+        // Sinon, fallback sur localStorage
+        let loadedData = null;
+        
+        try {
+            const localData = localStorage.getItem('planning_data');
+            if (localData) {
+                loadedData = JSON.parse(localData);
+                console.log('📁 Chargement depuis localStorage (mode hors ligne)');
+            }
+        } catch (e) {
+            console.warn('localStorage non disponible');
+        }
+        
+        if (loadedData) {
                     // Valider et appliquer les données
                     if (Array.isArray(loadedData.employees)) {
                         globalState.employees = loadedData.employees;
