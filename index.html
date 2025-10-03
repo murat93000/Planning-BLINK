@@ -3243,15 +3243,28 @@ function handleEmployeeAuthSubmit(e) {
         }
 
         function updateWeekTemplateSelect() {
-            try {
-                const select = document.getElementById('weekTemplateSelect');
-                if (!select) return;
-                
-                select.innerHTML = '<option value="">Sélectionner une semaine type...</option>';
-            } catch (error) {
-                console.error('Erreur update week template select:', error);
-            }
+    try {
+        const select = document.getElementById('weekTemplateSelect');
+        if (!select) return;
+        
+        select.innerHTML = '<option value="">Sélectionner une semaine type...</option>';
+        
+        if (!Array.isArray(globalState.weekTemplates)) {
+            globalState.weekTemplates = [];
+            return;
         }
+        
+        globalState.weekTemplates.forEach(template => {
+            const option = document.createElement('option');
+            option.value = template.id;
+            option.textContent = `${template.name} (${template.employees?.length || 0} employés)`;
+            select.appendChild(option);
+        });
+        
+    } catch (error) {
+        console.error('Erreur update week template select:', error);
+    }
+}
 
         // Système de sauvegarde amélioré
         function saveData() {
@@ -3705,10 +3718,161 @@ function handleEmployeeAuthSubmit(e) {
             }
         }
 
-        // Stubs pour les fonctions non implémentées
-        function saveWeekTemplate() { showToast('Fonctionnalité en développement', 'error'); }
-        function applyWeekTemplate() { showToast('Fonctionnalité en développement', 'error'); }
-        function deleteWeekTemplate() { showToast('Fonctionnalité en développement', 'error'); }
+        // ================================
+// GESTION DES SEMAINES TYPES
+// ================================
+
+function saveWeekTemplate() {
+    try {
+        if (!globalState.employees || globalState.employees.length === 0) {
+            showToast('Aucun employé à sauvegarder', 'error');
+            return;
+        }
+
+        const templateName = prompt('Nom de la semaine type :');
+        if (!templateName || !templateName.trim()) {
+            showToast('Nom requis', 'error');
+            return;
+        }
+
+        // Vérifier si le nom existe déjà
+        if (!Array.isArray(globalState.weekTemplates)) {
+            globalState.weekTemplates = [];
+        }
+
+        const existingIndex = globalState.weekTemplates.findIndex(t => t.name === templateName.trim());
+        
+        if (existingIndex >= 0) {
+            if (!confirm(`Une semaine type "${templateName}" existe déjà. Remplacer ?`)) {
+                return;
+            }
+        }
+
+        const weekKey = getWeekKey();
+        const templateData = {
+            id: generateId(),
+            name: templateName.trim(),
+            employees: []
+        };
+
+        // Copier la structure de chaque employé pour cette semaine
+        globalState.employees.forEach(employee => {
+            const empTemplate = {
+                name: employee.name,
+                role: employee.role,
+                planning: {}
+            };
+
+            // Copier le planning de la semaine courante
+            if (employee.planning && employee.planning[weekKey]) {
+                empTemplate.planning = JSON.parse(JSON.stringify(employee.planning[weekKey]));
+            }
+
+            templateData.employees.push(empTemplate);
+        });
+
+        // Sauvegarder ou remplacer
+        if (existingIndex >= 0) {
+            globalState.weekTemplates[existingIndex] = templateData;
+        } else {
+            globalState.weekTemplates.push(templateData);
+        }
+
+        updateWeekTemplateSelect();
+        saveData();
+        showToast(`Semaine type "${templateName}" sauvegardée`, 'success');
+
+    } catch (error) {
+        console.error('Erreur save week template:', error);
+        showToast('Erreur lors de la sauvegarde', 'error');
+    }
+}
+
+function applyWeekTemplate() {
+    try {
+        const select = document.getElementById('weekTemplateSelect');
+        if (!select || !select.value) {
+            showToast('Sélectionnez une semaine type', 'error');
+            return;
+        }
+
+        const templateId = select.value;
+        const template = globalState.weekTemplates.find(t => t.id === templateId);
+        
+        if (!template) {
+            showToast('Semaine type introuvable', 'error');
+            return;
+        }
+
+        if (!confirm(`Appliquer la semaine type "${template.name}" ?\n\nCela remplacera le planning actuel de la semaine.`)) {
+            return;
+        }
+
+        saveStateForUndo();
+
+        const weekKey = getWeekKey();
+
+        // Appliquer le template à chaque employé correspondant
+        template.employees.forEach(tempEmp => {
+            const employee = globalState.employees.find(emp => emp.name === tempEmp.name);
+            
+            if (employee) {
+                // Remplacer le planning de la semaine courante
+                if (!employee.planning) employee.planning = {};
+                
+                // Copier le planning avec de nouveaux IDs
+                employee.planning[weekKey] = {};
+                Object.keys(tempEmp.planning).forEach(day => {
+                    employee.planning[weekKey][day] = tempEmp.planning[day].map(shift => ({
+                        ...shift,
+                        id: generateId()
+                    }));
+                });
+            }
+        });
+
+        renderPlanning();
+        updateSummary();
+        saveData();
+        showToast(`Semaine type "${template.name}" appliquée`, 'success');
+
+    } catch (error) {
+        console.error('Erreur apply week template:', error);
+        showToast('Erreur lors de l\'application', 'error');
+    }
+}
+
+function deleteWeekTemplate() {
+    try {
+        const select = document.getElementById('weekTemplateSelect');
+        if (!select || !select.value) {
+            showToast('Sélectionnez une semaine type', 'error');
+            return;
+        }
+
+        const templateId = select.value;
+        const template = globalState.weekTemplates.find(t => t.id === templateId);
+        
+        if (!template) {
+            showToast('Semaine type introuvable', 'error');
+            return;
+        }
+
+        if (!confirm(`Supprimer la semaine type "${template.name}" ?`)) {
+            return;
+        }
+
+        globalState.weekTemplates = globalState.weekTemplates.filter(t => t.id !== templateId);
+        
+        updateWeekTemplateSelect();
+        saveData();
+        showToast(`Semaine type "${template.name}" supprimée`, 'success');
+
+    } catch (error) {
+        console.error('Erreur delete week template:', error);
+        showToast('Erreur lors de la suppression', 'error');
+    }
+}
 
         // ================================
         // NOUVELLES FONCTIONS POUR ÉDITION ET DÉPLACEMENT
