@@ -1461,9 +1461,6 @@
                             globalState.timeSlots = cloudData.timeSlots;
                             renderTimeSlots();
                             console.log('⏰ Créneaux chargés:', globalState.timeSlots.length);
-                            if (cloudData.currentWeek) {
-    globalState.currentWeek = new Date(cloudData.currentWeek);
-    updateWeekDisplay();
                         }
 
                         renderPlanning();
@@ -3272,7 +3269,6 @@ function handleEmployeeAuthSubmit(e) {
                     customTemplates: globalState.customTemplates || [],
                     timeSlots: globalState.timeSlots || [],
                     weekTemplates: globalState.weekTemplates || [],
-                    currentWeek: globalState.currentWeek.toISOString(),
                     lastSave: new Date().toISOString(),
                     version: '3.0'
                 };
