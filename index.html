@@ -1684,15 +1684,30 @@ if (employeeAuthForm) {
                 console.error('Erreur setup événements:', error);
             }
         }
-function checkEmployeeAuthentication() {
-    // Vérifier si déjà authentifié (sessionStorage)
-    const isAuth = sessionStorage.getItem('employeeAuth');
+function initializeApp() {
+    const today = new Date();
+    globalState.currentWeek = new Date(today);
+    globalState.currentWeek.setDate(today.getDate() - today.getDay() + 1);
     
-    if (isAuth === 'true') {
-        isEmployeeAuthenticated = true;
-        showPlanningContent();
-    } else {
-        showEmployeeAuthModal();
+    setupEventListeners();
+    updateWeekDisplay();
+    renderTimeSlots();
+    
+    // Vérifier l'authentification employé d'abord
+    const isAuthenticated = checkEmployeeAuthentication();
+    
+    // SEULEMENT charger si authentifié
+    if (isAuthenticated) {
+        loadData();
+        
+        // Activer l'auto-sauvegarde cloud si possible
+        setTimeout(() => {
+            if (isFirebaseEnabled && currentUser) {
+                enableAutoSaveCloud();
+            }
+        }, 2000);
+        
+        showToast('Planning initialisé avec succès', 'success');
     }
 }
 
