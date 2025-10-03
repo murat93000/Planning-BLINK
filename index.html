@@ -1379,6 +1379,7 @@
                     customTemplates: cleanCustomTemplates,
                     timeSlots: cleanTimeSlots,
                     weekTemplates: globalState.weekTemplates || [],
+                    currentWeek: globalState.currentWeek.toISOString(),
                     lastSave: new Date().toISOString(),
                     version: '3.1',
                     userId: currentUser ? currentUser.uid : 'shared'
@@ -1462,6 +1463,10 @@
                             renderTimeSlots();
                             console.log('⏰ Créneaux chargés:', globalState.timeSlots.length);
                         }
+                        if (cloudData.currentWeek) {
+    globalState.currentWeek = new Date(cloudData.currentWeek);
+    updateWeekDisplay();
+}
 
                         renderPlanning();
                         updateSummary();
