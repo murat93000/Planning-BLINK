@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -9,6 +8,8 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <!-- SheetJS pour export Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -331,6 +332,14 @@
         background: linear-gradient(135deg, #10b981, #059669);
     }
 
+    .template.retard {
+        background: linear-gradient(135deg, #f97316, #ea580c);
+    }
+
+    .template.ferie {
+        background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    }
+
     .template.custom {
         background: linear-gradient(135deg, #8b5cf6, #7c3aed);
     }
@@ -606,6 +615,14 @@
 
     .shift-card.conges {
         background: linear-gradient(135deg, #10b981, #059669);
+    }
+
+    .shift-card.retard {
+        background: linear-gradient(135deg, #f97316, #ea580c);
+    }
+
+    .shift-card.ferie {
+        background: linear-gradient(135deg, #8b5cf6, #7c3aed);
     }
 
     .shift-card.custom {
@@ -937,12 +954,83 @@
         font-size: 16px;
         margin-right: 8px;
     }
+/* 🔒 SÉCURITÉ : Désactivation en mode lecteur */
+    body:not(.admin-mode) .btn:not(.mode-toggle-btn):not(.btn-login):not(.btn-cancel):not(.week-nav-btn):not(.modal-btn),
+    body:not(.admin-mode) input:not(#adminPassword):not(#employeePassword),
+    body:not(.admin-mode) select,
+    body:not(.admin-mode) textarea,
+    body:not(.admin-mode) .template,
+    body:not(.admin-mode) .time-slot-template,
+    body:not(.admin-mode) [draggable="true"] {
+        pointer-events: none;
+        opacity: 0.5;
+        cursor: not-allowed !important;
+    }
+
+    body:not(.admin-mode) .time-slot,
+    body:not(.admin-mode) .employee-cell {
+        cursor: default !important;
+    }
+
+    /* 🔒 Barre de statut Admin */
+    .admin-status-bar {
+    position: fixed;
+    top: 20px;
+    left: 20px;     ← CHANGÉ ICI
+    padding: 15px 25px;
+    border-radius: 16px;
+    font-weight: 700;
+    font-size: 14px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    backdrop-filter: blur(20px);
+    transition: all 0.3s ease;
+}
+
+    .admin-status-bar.reader-mode {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+    }
+
+    .admin-status-bar.admin-mode {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: white;
+    }
+
+    .admin-status-bar button {
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        padding: 8px 16px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 12px;
+        transition: all 0.3s ease;
+    }
+
+    .admin-status-bar button:hover {
+        background: rgba(255, 255, 255, 0.3);
+        border-color: rgba(255, 255, 255, 0.5);
+        transform: scale(1.05);
+    }
+       
 </style>
 </head>
 <body>
+
+<!-- 🔒 NOUVEAUTÉ : Barre de statut Admin -->
+<div class="admin-status-bar reader-mode" id="adminStatusBar">
+    <span id="statusText">🔒 Mode Lecteur</span>
+    <button class="mode-toggle-btn" onclick="toggleMode()">Déverrouiller</button>
+</div>
+
     <div class="container">
         <div class="header">
-            <h1>📅 Planning Optic2000 Cloud</h1>
+            <h1>📅 Planning BLINK Cloud</h1>
             <p>Système de gestion d'équipe boutique BLINK avec synchronisation cloud Firebase</p>
             <div id="connectionStatus" style="margin-top: 10px; padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 600;">
                 <span id="statusText">🔄 Connexion en cours...</span>
@@ -950,9 +1038,8 @@
             </div>
         </div>
     <div class="auth-section">
-        <button class="btn" id="modeBtn" onclick="toggleMode()">🔒 Mode Lecture</button>
+        
         <button class="btn" id="authBtn" onclick="toggleAuth()">🔑 Se connecter</button>
-        <button class="btn warning" onclick="logoutEmployee()" style="margin-left: 10px;">🚪 Déconnexion</button>
         <div class="admin-panel" style="margin-top: 15px;">
             <button class="btn admin" onclick="openEmployeeModal()">👤 Ajouter Employé</button>
             <button class="btn admin" onclick="openBulkFillModal()">📅 Remplissage par Date</button>
@@ -978,6 +1065,10 @@
             <label>💼 Poste</label>
             <input type="text" id="empRole" placeholder="Fonction">
         </div>
+        <div class="control-group">
+            <label>📋 Contrat (h/sem)</label>
+            <input type="number" id="empContractHours" placeholder="35" value="35" min="1" max="48" step="0.5" style="width: 80px;">
+        </div>
         <button class="btn" onclick="addEmployee()">➕ Ajouter</button>
     </div>
 
@@ -1000,6 +1091,8 @@
             <div class="template absent" draggable="true" data-type="absent">❌ Absent</div>
             <div class="template cours" draggable="true" data-type="cours">📚 Cours</div>
             <div class="template conges" draggable="true" data-type="conges">🏖️ Congés</div>
+            <div class="template ferie" draggable="true" data-type="ferie" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">🎌 Férié</div>
+            <div class="template retard" draggable="true" data-type="retard" style="background: linear-gradient(135deg, #f97316, #ea580c);">⏰ Retard</div>
         </div>
         
         <div class="custom-template-creator">
@@ -1022,9 +1115,9 @@
     </div>
 
     <div class="week-nav">
-        <button class="btn" onclick="changeWeek(-1)">⬅️ Semaine précédente</button>
+        <button class="btn week-nav-btn" onclick="changeWeek(-1)">⬅️ Semaine précédente</button>
         <div class="current-week" id="weekDisplay">Semaine courante</div>
-        <button class="btn" onclick="changeWeek(1)">Semaine suivante ➡️</button>
+        <button class="btn week-nav-btn" onclick="changeWeek(1)">Semaine suivante ➡️</button>
     </div>
 
     <div class="planning-grid">
@@ -1050,9 +1143,15 @@
     <div class="employee-recap">
         <div class="recap-header">
             <h3 class="recap-title">📊 Récapitulatif Détaillé</h3>
-            <div class="recap-period-selector">
-                <button class="recap-period-btn active" id="weekRecapBtn" onclick="switchRecapPeriod('week')">Semaine</button>
-                <button class="recap-period-btn" id="monthRecapBtn" onclick="switchRecapPeriod('month')">Mois</button>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <div class="recap-period-selector">
+                    <button class="recap-period-btn active" id="weekRecapBtn" onclick="switchRecapPeriod('week')">Semaine</button>
+                    <button class="recap-period-btn" id="monthRecapBtn" onclick="switchRecapPeriod('month')">Mois</button>
+                </div>
+                <div class="admin-panel" style="display: flex; gap: 8px;">
+                    <button class="btn" onclick="openRegularisationModal()" style="padding: 8px 12px; font-size: 12px;">💰 Régulariser</button>
+                    <button class="btn admin" onclick="openExportMailModal()" style="padding: 8px 12px; font-size: 12px;">📧 Export Mail</button>
+                </div>
             </div>
         </div>
         <div id="employeeRecap" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;"></div>
@@ -1084,7 +1183,7 @@
                 <input type="text" id="modalEmpRole" required>
             </div>
             <div class="form-actions">
-                <button type="button" class="btn" onclick="closeModal()">Annuler</button>
+                <button type="button" class="btn modal-btn" onclick="closeModal()">Annuler</button>
                 <button type="submit" class="btn admin">Ajouter</button>
             </div>
         </form>
@@ -1185,7 +1284,7 @@
             </div>
             <div class="form-actions">
                 <button type="button" class="btn" onclick="closeModal()">Annuler</button>
-                <button type="submit" class="btn admin">Valider</button>
+                <button type="submit" class="btn admin modal-btn">Valider</button>
             </div>
         </form>
     </div>
@@ -1218,6 +1317,293 @@
         <div id="archivesList" style="display: flex; flex-direction: column; gap: 15px;"></div>
         <div class="form-actions" style="margin-top: 20px;">
             <button type="button" class="btn" onclick="closeModal()">Fermer</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODALE ÉDITION EMPLOYÉ -->
+<div id="editEmployeeModal" class="modal">
+    <div class="modal-content" style="max-width: 450px;">
+        <h2>✏️ Modifier l'Employé</h2>
+        <form id="editEmployeeForm" onsubmit="saveEditedEmployee(event)">
+            <input type="hidden" id="editEmpId">
+            <div class="form-group">
+                <label>👤 Nom complet:</label>
+                <input type="text" id="editEmpName" required style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+            </div>
+            <div class="form-group">
+                <label>💼 Poste/Fonction:</label>
+                <input type="text" id="editEmpRole" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+            </div>
+            <div class="form-group">
+                <label>📋 Heures contrat par semaine:</label>
+                <input type="number" id="editEmpContractHours" min="1" max="48" step="0.5" required style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                <p style="color: #6b7280; font-size: 12px; margin-top: 5px;">Exemples: 35h (temps plein), 24h (temps partiel), 39h...</p>
+            </div>
+            <div class="form-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button type="button" class="btn" onclick="closeModal()">Annuler</button>
+                <button type="submit" class="btn admin">💾 Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODALE SAISIE RETARD -->
+<div id="retardModal" class="modal">
+    <div class="modal-content" style="max-width: 400px;">
+        <h2>⏰ Saisir un Retard</h2>
+        <form id="retardForm" onsubmit="saveRetard(event)">
+            <input type="hidden" id="retardEmployeeId">
+            <input type="hidden" id="retardDay">
+            <div class="form-group">
+                <label>Durée du retard :</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="number" id="retardHeures" min="0" max="8" value="0" style="width: 70px; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; text-align: center;">
+                    <span style="font-weight: 600;">h</span>
+                    <input type="number" id="retardMinutes" min="0" max="59" value="30" step="5" style="width: 70px; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; text-align: center;">
+                    <span style="font-weight: 600;">min</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Motif (optionnel) :</label>
+                <input type="text" id="retardMotif" placeholder="Ex: Transport, RDV médical..." style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+            </div>
+            <div class="form-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button type="button" class="btn" onclick="closeModal()">Annuler</button>
+                <button type="submit" class="btn warning">⏰ Ajouter Retard</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODALE SAISIE HEURES (Cours/Congés/Férié) -->
+<div id="heuresAbsenceModal" class="modal">
+    <div class="modal-content" style="max-width: 400px;">
+        <h2 id="heuresAbsenceTitle">📚 Saisir les heures</h2>
+        <form id="heuresAbsenceForm" onsubmit="saveHeuresAbsence(event)">
+            <input type="hidden" id="heuresAbsenceEmployeeId">
+            <input type="hidden" id="heuresAbsenceDay">
+            <input type="hidden" id="heuresAbsenceType">
+            <div class="form-group">
+                <label>🕐 Horaires (optionnel) :</label>
+                <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+                    <input type="time" id="heuresAbsenceStart" value="09:00" style="padding: 10px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                    <span style="font-weight: 600;">-</span>
+                    <input type="time" id="heuresAbsenceEnd" value="17:00" style="padding: 10px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                    <button type="button" onclick="calculateHeuresFromTime()" class="btn" style="padding: 8px 12px; font-size: 12px;">📊 Calculer</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Heures à comptabiliser :</label>
+                <p style="color: #6b7280; font-size: 12px; margin-bottom: 10px;">Ces heures seront ajoutées au total travaillé</p>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="number" id="heuresAbsenceHeures" min="0" max="12" value="7" style="width: 80px; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px; text-align: center; font-weight: 700;">
+                    <span style="font-weight: 600;">h</span>
+                    <input type="number" id="heuresAbsenceMinutes" min="0" max="59" value="0" step="5" style="width: 80px; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 16px; text-align: center; font-weight: 700;">
+                    <span style="font-weight: 600;">min</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Note (optionnel) :</label>
+                <input type="text" id="heuresAbsenceNote" placeholder="Ex: Formation CFA, Toussaint..." style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+            </div>
+            <div style="background: #dbeafe; border: 1px solid #3b82f6; border-radius: 8px; padding: 12px; margin-top: 15px;">
+                <p style="color: #1e40af; font-size: 13px;">💡 <strong>Astuce :</strong> Renseigne les horaires et clique sur "Calculer" pour remplir automatiquement les heures</p>
+            </div>
+            <div class="form-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button type="button" class="btn" onclick="closeModal()">Annuler</button>
+                <button type="submit" class="btn admin" id="heuresAbsenceSubmitBtn">✅ Valider</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODALE RÉGULARISATION -->
+<div id="regularisationModal" class="modal">
+    <div class="modal-content" style="max-width: 550px;">
+        <h2>💰 Régularisation des heures</h2>
+        <p style="color: #6b7280; margin-bottom: 20px; font-size: 14px;">
+            Régularisez les heures supplémentaires ou le déficit d'un employé
+        </p>
+        
+        <div class="form-group">
+            <label>👤 Employé :</label>
+            <select id="regularisationEmploye" onchange="updateRegularisationSolde()" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+            </select>
+        </div>
+        
+        <div id="regularisationInfo" style="background: #f3f4f6; border-radius: 12px; padding: 15px; margin: 15px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <span style="font-weight: 600; color: #374151;">Solde actuel :</span>
+                <span id="regularisationSoldeActuel" style="font-size: 1.5em; font-weight: 700; color: #667eea;">+0h</span>
+            </div>
+            <div id="regularisationSoldeCumuleContainer" style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px dashed #d1d5db;">
+                <span style="font-weight: 500; color: #6b7280;">📊 Solde cumulé :</span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span id="regularisationSoldeCumule" style="font-size: 1.2em; font-weight: 700; color: #667eea;">0h</span>
+                    <button type="button" onclick="openRazCumulModal()" class="btn" style="padding: 4px 8px; font-size: 11px; background: #fee2e2; color: #dc2626;">🔄 RAZ</button>
+                </div>
+            </div>
+            <div id="regularisationHistorique" style="font-size: 12px; color: #6b7280;"></div>
+        </div>
+        
+        <div class="form-group">
+            <label>📝 Type de régularisation :</label>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                <label style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #f3f4f6; border-radius: 8px; cursor: pointer; flex: 1;">
+                    <input type="radio" name="regularisationType" value="paye" checked onchange="updateRegularisationUI()">
+                    <span>💵 Payé</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #f3f4f6; border-radius: 8px; cursor: pointer; flex: 1;">
+                    <input type="radio" name="regularisationType" value="recupere" onchange="updateRegularisationUI()">
+                    <span>🔄 Récupéré</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #f3f4f6; border-radius: 8px; cursor: pointer; flex: 1;">
+                    <input type="radio" name="regularisationType" value="reporte" onchange="updateRegularisationUI()">
+                    <span>📅 Tout reporter</span>
+                </label>
+            </div>
+        </div>
+        
+        <div id="regularisationHeuresGroup" class="form-group">
+            <label>⏱️ Heures à régulariser :</label>
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+                <input type="number" id="regularisationHeures" min="0" max="200" value="0" style="width: 100px; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 18px; text-align: center; font-weight: 700;" onchange="updateRegularisationReste()">
+                <span style="font-weight: 600;">h</span>
+                <input type="number" id="regularisationMinutes" min="0" max="59" value="0" step="5" style="width: 80px; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 18px; text-align: center; font-weight: 700;" onchange="updateRegularisationReste()">
+                <span style="font-weight: 600;">min</span>
+                <button type="button" onclick="regulariserTout()" class="btn" style="padding: 8px 12px; font-size: 12px;">Tout</button>
+            </div>
+            <div id="regularisationReste" style="margin-top: 10px; padding: 10px; background: #fef3c7; border-radius: 8px; font-size: 13px; color: #92400e;">
+                📌 Reste à reporter : <strong>0h</strong>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label>📝 Note (optionnel) :</label>
+            <input type="text" id="regularisationNote" placeholder="Ex: Payé sur paie novembre, Récupéré le 15/11..." style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+        </div>
+        
+        <div class="form-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button type="button" class="btn" onclick="closeModal()">Annuler</button>
+            <button type="button" class="btn admin" onclick="executeRegularisation()">✅ Valider</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODALE RAZ CUMUL -->
+<div id="razCumulModal" class="modal">
+    <div class="modal-content" style="max-width: 450px;">
+        <h2>🔄 Ajustement du cumul</h2>
+        <p style="color: #6b7280; margin-bottom: 20px; font-size: 14px;">
+            Définir le point de départ et le solde initial du cumul
+        </p>
+        
+        <div class="form-group">
+            <label>👤 Employé :</label>
+            <div id="razCumulEmployeeName" style="padding: 12px; background: #f3f4f6; border-radius: 8px; font-weight: 600;"></div>
+        </div>
+        
+        <div class="form-group">
+            <label>📅 Démarrer le cumul à partir de :</label>
+            <input type="month" id="razCumulDate" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+        </div>
+        
+        <div class="form-group">
+            <label>💰 Solde de départ (optionnel) :</label>
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px;">
+                <select id="razCumulSigne" style="padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                    <option value="-">− Déficit</option>
+                    <option value="+">+ Excédent</option>
+                </select>
+                <input type="number" id="razCumulHeures" min="0" max="9999" value="0" placeholder="0" style="flex: 1; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 18px; text-align: center; font-weight: 700;">
+                <span style="font-weight: 600;">h</span>
+                <input type="number" id="razCumulMinutes" min="0" max="59" value="0" step="5" style="width: 70px; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 18px; text-align: center; font-weight: 700;">
+                <span style="font-weight: 600;">min</span>
+            </div>
+            <p style="font-size: 12px; color: #6b7280; margin-top: 8px;">
+                💡 Laisse à 0 pour repartir de zéro, ou saisis une valeur pour reprendre un solde existant.
+            </p>
+        </div>
+        
+        <div style="background: #dbeafe; border-radius: 8px; padding: 12px; margin: 15px 0; font-size: 13px; color: #1e40af;">
+            📊 Le cumul sera : <strong>Solde de départ + Soldes des mois à partir du mois sélectionné</strong>
+        </div>
+        
+        <div class="form-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button type="button" class="btn" onclick="closeRazCumulModal()">Annuler</button>
+            <button type="button" class="btn admin" onclick="executeRazCumul()">✅ Valider</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODALE EXPORT COMPTABLE -->
+<div id="exportComptableModal" class="modal">
+    <div class="modal-content" style="max-width: 550px;">
+        <h2>📤 Export Comptable</h2>
+        <p style="color: #6b7280; margin-bottom: 20px; font-size: 14px;">
+            Générez un récapitulatif pour votre comptable
+        </p>
+        
+        <div class="form-group">
+            <label>📅 Mois :</label>
+            <input type="month" id="exportMois" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+        </div>
+        
+        <div class="form-group" style="margin-top: 15px;">
+            <label>👥 Employés à inclure :</label>
+            <div style="display: flex; gap: 10px; margin: 10px 0;">
+                <button type="button" onclick="selectAllExportEmployees(true)" class="btn" style="padding: 6px 12px; font-size: 12px;">✅ Tout sélectionner</button>
+                <button type="button" onclick="selectAllExportEmployees(false)" class="btn" style="padding: 6px 12px; font-size: 12px;">❌ Tout désélectionner</button>
+            </div>
+            <div id="exportEmployesList" style="max-height: 200px; overflow-y: auto; border: 2px solid #e5e7eb; border-radius: 8px; padding: 10px;">
+                <!-- Liste des employés avec cases à cocher -->
+            </div>
+        </div>
+        
+        <div class="form-group" style="margin-top: 15px;">
+            <label>📋 Format :</label>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <label style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #f3f4f6; border-radius: 8px; cursor: pointer; flex: 1;">
+                    <input type="radio" name="exportFormat" value="texte" checked>
+                    <span>📄 Texte (.txt)</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #f3f4f6; border-radius: 8px; cursor: pointer; flex: 1;">
+                    <input type="radio" name="exportFormat" value="email">
+                    <span>📧 Copier pour email</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="form-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button type="button" class="btn" onclick="closeModal()">Annuler</button>
+            <button type="button" class="btn admin" onclick="executeExportComptable()">📤 Exporter</button>
+        </div>
+    </div>
+</div>
+        </div>
+    </div>
+</div>
+
+<!-- MODALE RAZ SOLDES -->
+<div id="razSoldesModal" class="modal">
+    <div class="modal-content" style="max-width: 450px;">
+        <h2>🔄 Remise à Zéro des Soldes</h2>
+        <p style="color: #6b7280; margin-bottom: 20px; font-size: 14px;">
+            Remettez les soldes d'heures à zéro après régularisation ou en début de période.
+        </p>
+        <div class="form-group">
+            <label>👥 Sélection :</label>
+            <select id="razSelection" style="width: 100%; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                <option value="tous">🌟 TOUS les employés</option>
+            </select>
+        </div>
+        <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin-top: 15px;">
+            <p style="color: #92400e; font-size: 13px;">⚠️ <strong>Attention :</strong> Cette action remet le solde d'heures cumulé à 0. L'historique des plannings est conservé.</p>
+        </div>
+        <div class="form-actions" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button type="button" class="btn" onclick="closeModal()">Annuler</button>
+            <button type="button" class="btn danger" onclick="executeRazSoldes()">🔄 Remettre à Zéro</button>
         </div>
     </div>
 </div>
@@ -1340,20 +1726,23 @@
         if (currentUser) {
             signOut();
         } else {
-            signInAnonymously();
+            signInWithGoogle();
         }
     }
 
-    function signInAnonymously() {
+    function signInWithGoogle() {
         if (!auth) return;
 
-        auth.signInAnonymously()
-            .then(() => {
-                showToast('Connexion réussie', 'success');
+        const provider = new firebase.auth.GoogleAuthProvider();
+        
+        auth.signInWithPopup(provider)
+            .then((result) => {
+                showToast('Connexion Google réussie ✅', 'success');
+                console.log('Utilisateur connecté:', result.user.email);
             })
             .catch((error) => {
-                console.error('Erreur connexion:', error);
-                showToast('Erreur de connexion', 'error');
+                console.error('Erreur connexion Google:', error);
+                showToast('Erreur de connexion Google', 'error');
             });
     }
 
@@ -1397,6 +1786,7 @@
                 id: emp.id,
                 name: emp.name || '',
                 role: emp.role || '',
+                contractHours: emp.contractHours || 35,
                 planning: {},
                 // 🔥 AJOUT : Sauvegarder les propriétés d'archivage
                 archived: emp.archived || false,
@@ -1491,8 +1881,64 @@
                 console.log('📡 Données cloud trouvées (main):', cloudData);
 
                 if (cloudData.employees && Array.isArray(cloudData.employees)) {
+                    // 🔥 DEBUG & NORMALISATION des retards
+                    cloudData.employees.forEach(emp => {
+                        if (emp.planning) {
+                            Object.keys(emp.planning).forEach(weekKey => {
+                                Object.keys(emp.planning[weekKey]).forEach(dayKey => {
+                                    const shifts = emp.planning[weekKey][dayKey];
+                                    if (Array.isArray(shifts)) {
+                                        shifts.forEach(shift => {
+                                            if (shift.type === 'retard') {
+                                                console.log(`🔍 DEBUG RETARD - ${emp.name} - ${weekKey} jour ${dayKey}:`, JSON.stringify(shift));
+                                                
+                                                // Si retardMinutes existe, le normaliser
+                                                if (shift.retardMinutes !== undefined && shift.retardMinutes !== null && shift.retardMinutes !== '') {
+                                                    shift.retardMinutes = parseInt(shift.retardMinutes) || 0;
+                                                    console.log(`🔧 Retard normalisé depuis retardMinutes: ${shift.retardMinutes} minutes`);
+                                                } 
+                                                // SINON, extraire depuis le texte (ex: "⏰ -1h30" ou "⏰ -30min")
+                                                else if (shift.text) {
+                                                    let extractedMinutes = 0;
+                                                    const text = shift.text;
+                                                    
+                                                    // Pattern: -Xh ou -XhYY ou -Xmin
+                                                    const heuresMatch = text.match(/-(\d+)h/);
+                                                    const minutesMatch = text.match(/h(\d+)/); // Minutes après 'h'
+                                                    const minOnlyMatch = text.match(/-(\d+)min/); // Seulement minutes
+                                                    
+                                                    if (heuresMatch) {
+                                                        extractedMinutes += parseInt(heuresMatch[1]) * 60;
+                                                    }
+                                                    if (minutesMatch) {
+                                                        extractedMinutes += parseInt(minutesMatch[1]);
+                                                    }
+                                                    if (minOnlyMatch && !heuresMatch) {
+                                                        extractedMinutes = parseInt(minOnlyMatch[1]);
+                                                    }
+                                                    
+                                                    if (extractedMinutes > 0) {
+                                                        shift.retardMinutes = extractedMinutes;
+                                                        console.log(`🔧 Retard extrait depuis texte "${text}": ${extractedMinutes} minutes`);
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
+                            });
+                        }
+                    });
+                    
                     globalState.employees = cloudData.employees;
                     console.log('👥 Employés chargés:', globalState.employees.length);
+                    
+                    // DEBUG: Afficher les régularisations chargées
+                    globalState.employees.forEach(emp => {
+                        if (emp.regularisations && emp.regularisations.length > 0) {
+                            console.log(`🔍 DEBUG LOAD - ${emp.name} a ${emp.regularisations.length} régularisation(s):`, JSON.stringify(emp.regularisations));
+                        }
+                    });
                 }
 
                 if (cloudData.customTemplates && Array.isArray(cloudData.customTemplates)) {
@@ -1514,10 +1960,14 @@
                     console.log('📋 Semaines types chargées:', globalState.weekTemplates.length);
                 }
 
-                if (cloudData.currentWeek) {
-                    globalState.currentWeek = new Date(cloudData.currentWeek);
-                    updateWeekDisplay();
-                }
+                // 🔥 MODIFIÉ : Toujours afficher la semaine courante à l'ouverture
+                // On ne charge plus la semaine sauvegardée, on garde la date du jour
+                const today = new Date();
+                const dayOfWeek = today.getDay();
+                const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+                today.setDate(today.getDate() + diff);
+                globalState.currentWeek = today;
+                updateWeekDisplay();
 
                 renderPlanning();
                 updateSummary();
@@ -1564,6 +2014,40 @@
                         console.log('📡 Rechargement forcé des données cloud:', cloudData);
 
                         if (cloudData.employees && Array.isArray(cloudData.employees)) {
+                            // 🔥 NORMALISATION : S'assurer que retardMinutes est bien un nombre
+                            cloudData.employees.forEach(emp => {
+                                if (emp.planning) {
+                                    Object.keys(emp.planning).forEach(weekKey => {
+                                        Object.keys(emp.planning[weekKey]).forEach(dayKey => {
+                                            const shifts = emp.planning[weekKey][dayKey];
+                                            if (Array.isArray(shifts)) {
+                                                shifts.forEach(shift => {
+                                                    if (shift.type === 'retard') {
+                                                        // Si retardMinutes existe, le normaliser
+                                                        if (shift.retardMinutes !== undefined && shift.retardMinutes !== null && shift.retardMinutes !== '') {
+                                                            shift.retardMinutes = parseInt(shift.retardMinutes) || 0;
+                                                        } 
+                                                        // SINON, extraire depuis le texte
+                                                        else if (shift.text) {
+                                                            let extractedMinutes = 0;
+                                                            const text = shift.text;
+                                                            const heuresMatch = text.match(/-(\d+)h/);
+                                                            const minutesMatch = text.match(/h(\d+)/);
+                                                            const minOnlyMatch = text.match(/-(\d+)min/);
+                                                            
+                                                            if (heuresMatch) extractedMinutes += parseInt(heuresMatch[1]) * 60;
+                                                            if (minutesMatch) extractedMinutes += parseInt(minutesMatch[1]);
+                                                            if (minOnlyMatch && !heuresMatch) extractedMinutes = parseInt(minOnlyMatch[1]);
+                                                            
+                                                            if (extractedMinutes > 0) shift.retardMinutes = extractedMinutes;
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                        });
+                                    });
+                                }
+                            });
                             globalState.employees = cloudData.employees;
                         }
 
@@ -1646,12 +2130,29 @@
     function initializeApp() {
         const today = new Date();
         globalState.currentWeek = new Date(today);
-        globalState.currentWeek.setDate(today.getDate() - today.getDay() + 1);
+        const dayOfWeek = today.getDay();
+const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+globalState.currentWeek.setDate(today.getDate() + diff);
         
         setupEventListeners();
         updateWeekDisplay();
         renderTimeSlots();
         
+        // 🔒 NOUVEAUTÉ : Initialiser en mode lecteur
+        document.body.classList.remove('admin-mode');
+        globalState.isAdminMode = false;
+        
+        const statusBar = document.getElementById('adminStatusBar');
+        const statusText = document.getElementById('statusText');
+        
+        if (statusBar && statusText) {
+            statusBar.className = 'admin-status-bar reader-mode';
+            statusText.textContent = '🔒 Mode Lecteur';
+        }
+        
+        console.log('🔒 Application démarrée en Mode Lecteur');
+        
+               
         checkEmployeeAuthentication();
         
         if (isFirebaseEnabled) {
@@ -1788,7 +2289,7 @@ function toggleAuth() {
     if (currentUser) {
         signOut();
     } else {
-        signInAnonymously();
+        signInWithGoogle();
     }
 }
     function handleKeyboardShortcuts(e) {
@@ -1879,14 +2380,35 @@ function toggleAuth() {
             console.log('toggleMode appelé, mode actuel:', globalState.isAdminMode);
             
             if (globalState.isAdminMode) {
+                // Désactiver le mode admin
                 globalState.isAdminMode = false;
+                document.body.classList.remove('admin-mode');
+                
+                // Mettre à jour la barre de statut
+                const statusBar = document.getElementById('adminStatusBar');
+                const statusText = document.getElementById('statusText');
+                
+                if (statusBar && statusText) {
+                    statusBar.className = 'admin-status-bar reader-mode';
+                    statusText.textContent = '🔒 Mode Lecteur';
+                    
+                    // Changer le bouton
+                    const button = statusBar.querySelector('button');
+                    if (button) {
+                        button.textContent = 'Déverrouiller';
+                        button.onclick = toggleMode;
+                    }
+                }
+                
                 updateModeDisplay();
                 showToast('Mode lecture activé', 'success');
             } else {
+                // Demander le mot de passe pour activer
                 openModal('passwordModal');
             }
+            
         } catch (error) {
-            console.error('Erreur toggle mode:', error);
+            console.error('Erreur toggleMode:', error);
             showToast('Erreur changement de mode', 'error');
         }
     }
@@ -1933,34 +2455,52 @@ function toggleAuth() {
     }
 
     function handlePasswordSubmit(e) {
+        e.preventDefault();
+        
         try {
-            e.preventDefault();
-            console.log('Soumission mot de passe...');
-            
             const passwordInput = document.getElementById('adminPassword');
             if (!passwordInput) {
-                console.error('Input mot de passe non trouvé');
-                showToast('Erreur d\'interface', 'error');
+                console.error('Champ mot de passe introuvable');
                 return;
             }
             
             const password = passwordInput.value;
-            console.log('Mot de passe saisi:', password.length, 'caractères');
             
             if (password === ADMIN_PASSWORD) {
+                // ✅ MOT DE PASSE CORRECT
                 globalState.isAdminMode = true;
-                updateModeDisplay();
+                document.body.classList.add('admin-mode');
+                
+                // Mettre à jour la barre de statut
+                const statusBar = document.getElementById('adminStatusBar');
+                const statusText = document.getElementById('statusText');
+                
+                if (statusBar && statusText) {
+                    statusBar.className = 'admin-status-bar admin-mode';
+                    statusText.textContent = '✅ Mode Admin';
+                    
+                    // Changer le bouton
+                    const button = statusBar.querySelector('button');
+                    if (button) {
+                        button.textContent = '🔒 Verrouiller';
+                        button.onclick = toggleMode;
+                    }
+                }
+                
                 closeModal();
-                showToast('Mode administrateur activé', 'success');
-                console.log('Mode admin activé avec succès');
+                updateModeDisplay();
+                showToast('Mode admin activé', 'success');
+                
+                passwordInput.value = '';
             } else {
-                showToast('Mot de passe incorrect (utilisez: 123123)', 'error');
+                // ❌ MAUVAIS MOT DE PASSE
+                showToast('Mot de passe incorrect', 'error');
                 passwordInput.value = '';
                 passwordInput.focus();
-                console.log('Mot de passe incorrect');
             }
+            
         } catch (error) {
-            console.error('Erreur password submit:', error);
+            console.error('Erreur handlePasswordSubmit:', error);
             showToast('Erreur de connexion', 'error');
         }
     }
@@ -2008,22 +2548,24 @@ function toggleAuth() {
 
     function updateModeDisplay() {
         try {
-            const modeBtn = document.getElementById('modeBtn');
+            // 🔒 AJOUT : Gérer la classe admin-mode sur le body
+            if (globalState.isAdminMode) {
+                document.body.classList.add('admin-mode');
+            } else {
+                document.body.classList.remove('admin-mode');
+            }
+            
             const adminPanels = document.querySelectorAll('.admin-panel');
             const sidebar = document.getElementById('sidebar');
             
             if (globalState.isAdminMode) {
-                modeBtn.textContent = '🔓 Mode Admin';
-                modeBtn.className = 'btn admin';
                 adminPanels.forEach(panel => panel.style.display = 'block');
-                sidebar.classList.add('show');
+                if (sidebar) sidebar.classList.add('show');
                 addDeleteButtonsToTemplates();
                 updateSidebarContent();
             } else {
-                modeBtn.textContent = '🔒 Mode Lecture';
-                modeBtn.className = 'btn';
                 adminPanels.forEach(panel => panel.style.display = 'none');
-                sidebar.classList.remove('show');
+                if (sidebar) sidebar.classList.remove('show');
                 removeDeleteButtonsFromTemplates();
             }
             
@@ -2248,7 +2790,9 @@ function toggleAuth() {
     function applyShiftToEmployeeDay(employee, date, shiftData, replaceExisting) {
         try {
             const weekStart = new Date(date);
-            weekStart.setDate(date.getDate() - date.getDay() + 1);
+            const dayOfWeek2 = date.getDay();
+const diff2 = dayOfWeek2 === 0 ? -6 : 1 - dayOfWeek2;
+weekStart.setDate(date.getDate() + diff2);
             
             const year = weekStart.getFullYear();
             const firstDay = new Date(year, 0, 1);
@@ -2285,6 +2829,7 @@ function toggleAuth() {
         
         const name = document.getElementById('empName').value.trim();
         const role = document.getElementById('empRole').value.trim();
+        const contractHours = parseFloat(document.getElementById('empContractHours').value) || 35;
         
         if (!name) {
             showToast('Le nom est requis', 'error');
@@ -2304,6 +2849,7 @@ function toggleAuth() {
             id: generateId(),
             name: name,
             role: role || 'Employé',
+            contractHours: contractHours,
             planning: {}
         };
         
@@ -2311,6 +2857,7 @@ function toggleAuth() {
         
         document.getElementById('empName').value = '';
         document.getElementById('empRole').value = '';
+        document.getElementById('empContractHours').value = '35';
         
         renderPlanning();
         updateSummary();
@@ -2617,7 +3164,22 @@ function toggleAuth() {
             dayHeader.className = 'grid-header';
             const date = new Date(globalState.currentWeek);
             date.setDate(date.getDate() + index);
-            dayHeader.innerHTML = `${day}<br><small>${date.getDate()}</small>`;
+            
+            // Vérifier si c'est un jour férié
+            const jourFerie = isJourFerie(date);
+            let ferieLabel = '';
+            
+            if (jourFerie) {
+                dayHeader.style.backgroundColor = 'rgba(156, 163, 175, 0.3)';
+                ferieLabel = `<br><small style="color: #8b5cf6; font-size: 9px;">🎌 ${jourFerie.nom}</small>`;
+            }
+            
+            // Fond gris pour le dimanche
+            if (date.getDay() === 0) {
+                dayHeader.style.backgroundColor = 'rgba(156, 163, 175, 0.4)';
+            }
+            
+            dayHeader.innerHTML = `${day}<br><small>${date.getDate()}</small>${ferieLabel}`;
             grid.appendChild(dayHeader);
         });
         
@@ -2655,32 +3217,78 @@ function toggleAuth() {
             
             let weekHours = 0;
             let workDays = 0;
+            let retardMins = 0;
             const weekKey = getWeekKey();
             
             if (employee.planning && employee.planning[weekKey]) {
                 Object.values(employee.planning[weekKey]).forEach(dayShifts => {
                     let hasWork = false;
                     dayShifts.forEach(shift => {
+                        // Compter les heures de travail
                         if (shift.type === 'work' && shift.hours) {
                             const hours = parseHours(shift.hours);
                             weekHours += hours;
                             hasWork = true;
+                        }
+                        // Compter les heures de Cours, Congés et Férié
+                        if (['cours', 'conges', 'ferie'].includes(shift.type) && shift.hours) {
+                            const hours = parseHours(shift.hours);
+                            weekHours += hours;
+                            hasWork = true;
+                        }
+                        // Soustraire les retards
+                        if (shift.type === 'retard') {
+                            // Essayer plusieurs sources pour la valeur du retard
+                            let mins = 0;
+                            if (shift.retardMinutes !== undefined && shift.retardMinutes !== null) {
+                                mins = parseInt(shift.retardMinutes) || 0;
+                            }
+                            if (mins > 0) {
+                                console.log(`⏰ Retard détecté pour ${employee.name}: ${mins} minutes (raw: ${shift.retardMinutes}, type: ${typeof shift.retardMinutes})`);
+                            }
+                            retardMins += mins;
                         }
                     });
                     if (hasWork) workDays++;
                 });
             }
             
+            const contractHours = employee.contractHours || 35;
+            const retardHours = retardMins / 60;
+            const effectiveWeekHours = weekHours - retardHours;
+            const weekDiff = effectiveWeekHours - contractHours;
+            
+            // Calcul du solde mensuel (mois courant uniquement)
+            const currentDate = new Date(globalState.currentWeek);
+            const monthSolde = calculateMonthlySolde(employee, currentDate.getMonth(), currentDate.getFullYear());
+            
+            // Couleur du solde semaine
+            let weekSoldeColor = '#10b981'; // vert
+            if (weekDiff > 0) weekSoldeColor = '#ef4444'; // rouge heures sup
+            else if (weekDiff < 0) weekSoldeColor = '#f59e0b'; // orange déficit
+            
+            // Couleur du solde mois
+            let monthSoldeColor = '#10b981'; // vert
+            if (monthSolde.solde > 0) monthSoldeColor = '#ef4444'; // rouge heures sup
+            else if (monthSolde.solde < 0) monthSoldeColor = '#f59e0b'; // orange déficit
+            
+            const weekSoldeText = weekDiff >= 0 ? `+${formatHours(weekDiff)}` : `${formatHours(weekDiff)}`;
+            const monthSoldeText = monthSolde.solde >= 0 ? `+${formatHours(monthSolde.solde)}` : `${formatHours(monthSolde.solde)}`;
+            
             empCell.innerHTML = `
-                <div class="employee-name">
+                <div class="employee-name" style="font-size: 14px;">
                     ${globalState.isAdminMode ? '⬍⬍ ' : ''}${employee.name}
                 </div>
-                <div class="employee-role">${employee.role}</div>
-                <div class="employee-hours">${formatHours(weekHours)} | ${workDays} jours</div>
+                <div class="employee-role" style="font-size: 12px;">${employee.role}</div>
+                <div class="employee-hours" style="font-size: 14px; font-weight: 700;">${formatHours(contractHours)} | ${workDays} jours | <span style="color: #667eea;">${formatHours(effectiveWeekHours)}</span></div>
+                <div style="font-size: 12px; color: ${weekSoldeColor}; font-weight: 700; margin-top: 2px;">📅 Sem: ${weekSoldeText}</div>
+                <div style="font-size: 12px; color: ${monthSoldeColor}; font-weight: 700; margin-top: 1px;">📊 Mois: ${monthSoldeText}</div>
                 ${globalState.isAdminMode ? `
                     <button class="remove-emp" onclick="removeEmployee('${employee.id}')" title="Supprimer">×</button>
+                    <button class="edit-emp" onclick="openEditEmployeeModal('${employee.id}')" title="Modifier contrat" style="position: absolute; top: 5px; left: 5px; background: #8b5cf6; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center;">✏️</button>
                     <button class="copy-week-btn" onclick="copyEmployeeWeek('${employee.id}')" title="Copier semaine">📋</button>
                     <button class="paste-week-btn" onclick="pasteEmployeeWeek('${employee.id}')" title="Coller semaine" style="opacity: ${globalState.copiedWeek ? '1' : '0.3'};">📥</button>
+                    <button class="debug-btn" onclick="debugEmployeeWeek('${employee.id}')" title="Voir détails" style="position: absolute; bottom: 5px; left: 5px; background: #f59e0b; color: white; border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; cursor: pointer;">🔍</button>
                 ` : ''}
             `;
             
@@ -2700,6 +3308,20 @@ function toggleAuth() {
                 dayCell.className = 'day-cell';
                 dayCell.dataset.employeeId = employee.id;
                 dayCell.dataset.day = day;
+                
+                // Vérifier si c'est un jour férié pour appliquer le fond gris
+                const dayDate = new Date(globalState.currentWeek);
+                dayDate.setDate(dayDate.getDate() + day);
+                const jourFerie = isJourFerie(dayDate);
+                
+                if (jourFerie) {
+                    dayCell.style.backgroundColor = 'rgba(156, 163, 175, 0.15)';
+                }
+                
+                // Fond gris plus foncé pour le dimanche
+                if (dayDate.getDay() === 0) {
+                    dayCell.style.backgroundColor = 'rgba(156, 163, 175, 0.25)';
+                }
                 
                 if (globalState.isAdminMode) {
                     dayCell.addEventListener('dragover', handleDragOver);
@@ -2813,7 +3435,9 @@ function toggleAuth() {
                     text: draggedShiftData.shift.text,
                     hours: draggedShiftData.shift.hours,
                     slot: draggedShiftData.shift.slot,
-                    backgroundColor: draggedShiftData.shift.backgroundColor
+                    backgroundColor: draggedShiftData.shift.backgroundColor,
+                    retardMinutes: draggedShiftData.shift.retardMinutes,
+                    motif: draggedShiftData.shift.motif
                 };
                 
                 const originalEmployee = globalState.employees.find(emp => emp.id === draggedShiftData.originalEmployeeId);
@@ -2830,6 +3454,20 @@ function toggleAuth() {
                 showToast('Case déplacée', 'success');
                 
             } else if (globalState.draggedItem) {
+                // Si c'est un retard, ouvrir la modale de saisie
+                if (globalState.draggedItem.type === 'retard') {
+                    openRetardModal(employeeId, day);
+                    globalState.draggedItem = null;
+                    return;
+                }
+                
+                // Si c'est Cours, Congés, Férié ou Absent, ouvrir la modale de saisie des heures
+                if (['cours', 'conges', 'ferie', 'absent'].includes(globalState.draggedItem.type)) {
+                    openHeuresAbsenceModal(employeeId, day, globalState.draggedItem.type);
+                    globalState.draggedItem = null;
+                    return;
+                }
+                
                 if (globalState.draggedItem.type === 'timeSlot') {
                     const slot = globalState.draggedItem.slot;
                     const hours = calculateHours(slot.start, slot.end);
@@ -2980,20 +3618,25 @@ function toggleAuth() {
     }
 
     function parseHours(hoursString) {
-        if (!hoursString || typeof hoursString !== 'string') return 0;
+        if (!hoursString) return 0;
+        if (typeof hoursString === 'number') return hoursString;
+        if (typeof hoursString !== 'string') return 0;
         
-        const hourMinuteMatch = hoursString.match(/(\d+)h(\d+)/);
+        // Format "6h30" ou "8h" ou "7h15"
+        const hourMinuteMatch = hoursString.match(/(\d+)h(\d+)/i);
         if (hourMinuteMatch) {
             const hours = parseInt(hourMinuteMatch[1]);
             const minutes = parseInt(hourMinuteMatch[2]);
             return hours + (minutes / 60);
         }
         
-        const hourMatch = hoursString.match(/(\d+)h/);
+        // Format "8h"
+        const hourMatch = hoursString.match(/(\d+)h/i);
         if (hourMatch) {
             return parseInt(hourMatch[1]);
         }
         
+        // Format décimal "6.5" ou "6,5"
         const cleanString = hoursString.replace(/[^\d.,]/g, '');
         const normalizedString = cleanString.replace(',', '.');
         const hours = parseFloat(normalizedString);
@@ -3004,15 +3647,104 @@ function toggleAuth() {
     function formatHours(hours) {
         if (hours === 0) return '0h';
         
-        const wholeHours = Math.floor(hours);
-        const minutes = Math.round((hours - wholeHours) * 60);
+        // Gérer les nombres négatifs correctement
+        const isNegative = hours < 0;
+        const absHours = Math.abs(hours);
         
+        const wholeHours = Math.floor(absHours);
+        const minutes = Math.round((absHours - wholeHours) * 60);
+        
+        let result;
         if (minutes === 0) {
-            return `${wholeHours}h`;
+            result = `${wholeHours}h`;
         } else if (minutes === 30) {
-            return `${wholeHours}h30`;
+            result = `${wholeHours}h30`;
         } else {
-            return `${wholeHours}h${minutes.toString().padStart(2, '0')}`;
+            result = `${wholeHours}h${minutes.toString().padStart(2, '0')}`;
+        }
+        
+        return isNegative ? `-${result}` : result;
+    }
+
+    function debugEmployeeWeek(employeeId) {
+        try {
+            const employee = globalState.employees.find(emp => emp.id === employeeId);
+            if (!employee) return;
+            
+            const weekKey = getWeekKey();
+            const planning = employee.planning?.[weekKey] || {};
+            
+            let totalHours = 0;
+            let totalRetardMinutes = 0;
+            let details = `📊 DEBUG ${employee.name} - Semaine ${weekKey}\n`;
+            details += `📋 Contrat: ${employee.contractHours}h\n\n`;
+            
+            const jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+            
+            for (let day = 0; day < 7; day++) {
+                const shifts = planning[day] || [];
+                let dayHours = 0;
+                let dayRetardMins = 0;
+                let dayDetails = [];
+                
+                shifts.forEach(shift => {
+                    if (shift.type === 'work' && shift.hours) {
+                        const hours = parseHours(shift.hours);
+                        dayHours += hours;
+                        dayDetails.push(`💼 ${shift.text} = ${shift.hours} (${hours}h)`);
+                    }
+                    if (['cours', 'conges', 'ferie'].includes(shift.type)) {
+                        if (shift.hours) {
+                            const hours = parseHours(shift.hours);
+                            dayHours += hours;
+                            const icon = shift.type === 'cours' ? '📚' : shift.type === 'conges' ? '🏖️' : '🎌';
+                            dayDetails.push(`${icon} ${shift.text || shift.type} = ${shift.hours} (${hours}h)`);
+                        } else {
+                            const icon = shift.type === 'cours' ? '📚' : shift.type === 'conges' ? '🏖️' : '🎌';
+                            dayDetails.push(`${icon} ${shift.text || shift.type} = ⚠️ PAS D'HEURES DÉFINIES!`);
+                        }
+                    }
+                    if (shift.type === 'retard' && shift.retardMinutes) {
+                        const retardMinsValue = parseInt(shift.retardMinutes) || 0;
+                        dayRetardMins += retardMinsValue;
+                        const h = Math.floor(retardMinsValue / 60);
+                        const m = retardMinsValue % 60;
+                        const retardStr = h > 0 ? `${h}h${m > 0 ? m : ''}` : `${m}min`;
+                        dayDetails.push(`⏰ Retard: -${retardStr}`);
+                    }
+                    if (shift.type === 'repos') {
+                        dayDetails.push(`😴 Repos`);
+                    }
+                });
+                
+                if (dayDetails.length > 0) {
+                    details += `${jours[day]}: ${dayDetails.join(', ')} → ${dayHours}h${dayRetardMins > 0 ? ` (-${dayRetardMins}min retard)` : ''}\n`;
+                    totalHours += dayHours;
+                    totalRetardMinutes += dayRetardMins;
+                } else {
+                    details += `${jours[day]}: (vide)\n`;
+                }
+            }
+            
+            const totalRetardHours = totalRetardMinutes / 60;
+            const effectiveHours = totalHours - totalRetardHours;
+            const diff = effectiveHours - employee.contractHours;
+            
+            details += `\n━━━━━━━━━━━━━━━━━━\n`;
+            details += `TOTAL BRUT: ${formatHours(totalHours)}\n`;
+            if (totalRetardMinutes > 0) {
+                details += `RETARDS: -${formatHours(totalRetardHours)}\n`;
+                details += `TOTAL EFFECTIF: ${formatHours(effectiveHours)}\n`;
+            }
+            details += `Contrat: ${employee.contractHours}h\n`;
+            details += `Diff: ${diff >= 0 ? '+' : ''}${formatHours(diff)}`;
+            
+            alert(details);
+            console.log(details);
+            console.log('Planning brut:', planning);
+            
+        } catch (error) {
+            console.error('Erreur debug:', error);
         }
     }
 
@@ -3235,25 +3967,59 @@ let totalHours = 0;
     // ============================================
     function generateWeekRecap(container, employees) {
         const weekKey = getWeekKey();
+        const currentDate = new Date(globalState.currentWeek);
         
         employees.forEach(employee => {
-            let workHours = 0;
+            let workHours = 0;  // Heures conventionnelles (hors dimanches)
             let workDays = 0;
             let absences = 0;
             let conges = 0;
             let repos = 0;
             let cours = 0;
+            let retardMinutes = 0;
+            let dimanchesCount = 0;
+            let dimanchesHours = 0;
+            let feriesCount = 0;
+            let feriesHours = 0;
+            
+            const contractHours = employee.contractHours || 35;
+            const heuresBaseJourFerie = contractHours >= 39 ? 8 : 7;
             
             if (employee.planning && employee.planning[weekKey]) {
-                Object.values(employee.planning[weekKey]).forEach(dayShifts => {
+                Object.keys(employee.planning[weekKey]).forEach(dayIndex => {
+                    const dayShifts = employee.planning[weekKey][dayIndex];
                     let hasWork = false;
+                    
+                    // Calculer la date du jour
+                    const shiftDate = new Date(currentDate);
+                    shiftDate.setDate(shiftDate.getDate() + parseInt(dayIndex));
+                    const isDim = isDimanche(shiftDate);
+                    const ferie = isJourFerie(shiftDate);
+                    
                     dayShifts.forEach(shift => {
                         switch(shift.type) {
                             case 'work':
                                 if (shift.hours) {
                                     const hours = parseHours(shift.hours);
-                                    workHours += hours;
                                     hasWork = true;
+                                    
+                                    if (isDim) {
+                                        // Dimanche = heures à part (pas dans conventionnelles)
+                                        dimanchesCount++;
+                                        dimanchesHours += hours;
+                                    } else if (ferie) {
+                                        // Férié travaillé = base conventionnelle + heures à majorer
+                                        workHours += heuresBaseJourFerie;
+                                        feriesCount++;
+                                        feriesHours += hours;
+                                    } else {
+                                        workHours += hours;
+                                    }
+                                }
+                                break;
+                            case 'retard':
+                                if (shift.retardMinutes) {
+                                    retardMinutes += parseInt(shift.retardMinutes) || 0;
                                 }
                                 break;
                             case 'absent':
@@ -3261,12 +4027,27 @@ let totalHours = 0;
                                 break;
                             case 'conges':
                                 conges++;
+                                if (shift.hours) {
+                                    workHours += parseHours(shift.hours);
+                                    hasWork = true;
+                                }
                                 break;
                             case 'repos':
                                 repos++;
                                 break;
                             case 'cours':
                                 cours++;
+                                if (shift.hours) {
+                                    workHours += parseHours(shift.hours);
+                                    hasWork = true;
+                                }
+                                break;
+                            case 'ferie':
+                                // Case Férié = jour férié NON travaillé (payé)
+                                if (shift.hours) {
+                                    workHours += parseHours(shift.hours);
+                                    hasWork = true;
+                                }
                                 break;
                         }
                     });
@@ -3274,7 +4055,14 @@ let totalHours = 0;
                 });
             }
             
-            const overtime = Math.max(0, workHours - 35);
+            const retardHours = retardMinutes / 60;
+            const effectiveHours = workHours - retardHours;
+            const diff = effectiveHours - contractHours;
+            const overtime = Math.max(0, diff);
+            const deficit = Math.max(0, -diff);
+            
+            // Calcul du solde mensuel
+            const monthSolde = calculateMonthlySolde(employee, currentDate.getMonth(), currentDate.getFullYear());
             
             const recapCard = document.createElement('div');
             recapCard.style.cssText = `
@@ -3285,33 +4073,66 @@ let totalHours = 0;
                 border: 1px solid rgba(255, 255, 255, 0.3);
             `;
             
+            // Déterminer la couleur selon le statut
+            let statusColor = '#10b981'; // Vert par défaut
+            if (overtime > 0) {
+                statusColor = '#ef4444'; // Rouge pour heures sup
+            } else if (deficit > 0) {
+                statusColor = '#f59e0b'; // Orange pour déficit
+            }
+            
+            // Couleur du solde mensuel
+            let soldeColor = '#10b981';
+            if (monthSolde.solde > 0) soldeColor = '#ef4444';
+            else if (monthSolde.solde < 0) soldeColor = '#f59e0b';
+            
+            const diffText = diff >= 0 ? `+${formatHours(diff)}` : `-${formatHours(Math.abs(diff))}`;
+            const soldeText = monthSolde.solde >= 0 ? `+${formatHours(monthSolde.solde)}` : `-${formatHours(Math.abs(monthSolde.solde))}`;
+            
             recapCard.innerHTML = `
-                <h4 style="color: #374151; margin-bottom: 15px; font-size: 1.2em; font-weight: 700;">${employee.name}</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(102, 126, 234, 0.1); border-radius: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h4 style="color: #374151; font-size: 1.2em; font-weight: 700;">${employee.name}</h4>
+                    <span style="background: ${statusColor}20; color: ${statusColor}; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;">📋 ${contractHours}h</span>
+                </div>
+                <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+                    <span style="background: ${statusColor}15; color: ${statusColor}; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;">Sem: ${diffText}</span>
+                    <span style="background: ${soldeColor}15; color: ${soldeColor}; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;">📊 Mois: ${soldeText} (${monthSolde.completeWeeks || 0} sem)</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(102, 126, 234, 0.1); border-radius: 8px;">
                         <span style="font-weight: 600;">⏰ Heures travail:</span>
-                        <span style="font-weight: 700; color: ${workHours > 35 ? '#ef4444' : '#10b981'};">${formatHours(workHours)}</span>
+                        <span style="font-weight: 700; color: #667eea;">${formatHours(workHours)}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: ${retardHours > 0 ? 'rgba(249, 115, 22, 0.1)' : 'rgba(107, 114, 128, 0.1)'}; border-radius: 8px;">
+                        <span style="font-weight: 600;">⏰ Retards:</span>
+                        <span style="font-weight: 700; color: ${retardHours > 0 ? '#f97316' : '#6b7280'};">${retardHours > 0 ? '-' : ''}${formatHours(retardHours)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: ${overtime > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(107, 114, 128, 0.1)'}; border-radius: 8px;">
                         <span style="font-weight: 600;">⚡ Heures sup:</span>
-                        <span style="font-weight: 700; color: #ef4444;">${formatHours(overtime)}</span>
+                        <span style="font-weight: 700; color: ${overtime > 0 ? '#ef4444' : '#6b7280'};">${formatHours(overtime)}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(107, 114, 128, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(107, 114, 128, 0.1); border-radius: 8px;">
                         <span style="font-weight: 600;">📅 Jours travail:</span>
                         <span style="font-weight: 700; color: #6b7280;">${workDays}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;">
                         <span style="font-weight: 600;">🏖️ Congés:</span>
                         <span style="font-weight: 700; color: #10b981;">${conges}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">
                         <span style="font-weight: 600;">❌ Absences:</span>
                         <span style="font-weight: 700; color: #ef4444;">${absences}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(245, 158, 11, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(245, 158, 11, 0.1); border-radius: 8px;">
                         <span style="font-weight: 600;">😴 Repos:</span>
                         <span style="font-weight: 700; color: #6b7280;">${repos}</span>
                     </div>
+                    ${(dimanchesCount > 0 || feriesCount > 0) ? `
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(139, 92, 246, 0.1); border-radius: 8px;">
+                        <span style="font-weight: 600;">🎌 Dim/Fériés:</span>
+                        <span style="font-weight: 700; color: #8b5cf6;">${dimanchesCount > 0 ? dimanchesCount + 'D(' + formatHours(dimanchesHours) + ')' : ''}${dimanchesCount > 0 && feriesCount > 0 ? '/' : ''}${feriesCount > 0 ? feriesCount + 'F(' + formatHours(feriesHours) + ')' : ''}</span>
+                    </div>
+                    ` : ''}
                 </div>
             `;
             
@@ -3320,26 +4141,50 @@ let totalHours = 0;
     }
 
     // ============================================
-    // RÉCAPITULATIF MENSUEL
+    // RÉCAPITULATIF MENSUEL (même format que semaine)
     // ============================================
     function generateMonthRecap(container, employees) {
-        // Obtenir le début et la fin du mois de la semaine courante
         const currentDate = new Date(globalState.currentWeek);
         const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
         const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        const monthName = currentDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+        
+        // Calculer le nombre de semaines COMPLÈTES dans le mois (lundi-dimanche)
+        // Trouver le premier lundi du mois
+        let firstMonday = new Date(firstDayOfMonth);
+        while (firstMonday.getDay() !== 1) {
+            firstMonday.setDate(firstMonday.getDate() + 1);
+        }
+        // Trouver le dernier dimanche du mois
+        let lastSunday = new Date(lastDayOfMonth);
+        while (lastSunday.getDay() !== 0) {
+            lastSunday.setDate(lastSunday.getDate() - 1);
+        }
+        // Nombre de semaines complètes
+        const completeWeeks = Math.max(0, Math.floor((lastSunday - firstMonday) / (7 * 24 * 60 * 60 * 1000)) + 1);
         
         employees.forEach(employee => {
-            let workHours = 0;
+            let workHours = 0;  // Heures conventionnelles (hors dimanches)
             let workDays = 0;
             let absences = 0;
             let conges = 0;
             let repos = 0;
             let cours = 0;
+            let retardMinutes = 0;
+            let dimanchesCount = 0;
+            let dimanchesHours = 0;
+            let feriesCount = 0;
+            let feriesHours = 0;
             
+            const contractHours = employee.contractHours || 35;
+            const heuresBaseJourFerie = contractHours >= 39 ? 8 : 7;
+
             // Parcourir toutes les semaines du mois
             let currentWeekStart = new Date(firstDayOfMonth);
-            currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay() + 1);
-            
+            const dayOfWeek3 = currentWeekStart.getDay();
+            const diff3 = dayOfWeek3 === 0 ? -6 : 1 - dayOfWeek3;
+            currentWeekStart.setDate(currentWeekStart.getDate() + diff3);
+
             while (currentWeekStart <= lastDayOfMonth) {
                 const year = currentWeekStart.getFullYear();
                 const firstDay = new Date(year, 0, 1);
@@ -3351,20 +4196,40 @@ let totalHours = 0;
                     Object.keys(employee.planning[weekKey]).forEach(dayIndex => {
                         const dayShifts = employee.planning[weekKey][dayIndex];
                         
-                        // Calculer la date du jour
                         const shiftDate = new Date(currentWeekStart);
                         shiftDate.setDate(shiftDate.getDate() + parseInt(dayIndex));
                         
-                        // Vérifier si le jour est dans le mois
-                        if (shiftDate.getMonth() === currentDate.getMonth()) {
+                        // IMPORTANT: Ne compter que les jours dans les semaines COMPLÈTES
+                        // (entre le premier lundi et le dernier dimanche du mois)
+                        if (shiftDate >= firstMonday && shiftDate <= lastSunday && shiftDate.getMonth() === currentDate.getMonth()) {
                             let hasWork = false;
+                            const isDim = isDimanche(shiftDate);
+                            const ferie = isJourFerie(shiftDate);
+                            
                             dayShifts.forEach(shift => {
                                 switch(shift.type) {
                                     case 'work':
                                         if (shift.hours) {
                                             const hours = parseHours(shift.hours);
-                                            workHours += hours;
                                             hasWork = true;
+                                            
+                                            if (isDim) {
+                                                // Dimanche = heures à part (pas dans conventionnelles)
+                                                dimanchesCount++;
+                                                dimanchesHours += hours;
+                                            } else if (ferie) {
+                                                // Férié travaillé = base conventionnelle + heures à majorer
+                                                workHours += heuresBaseJourFerie;
+                                                feriesCount++;
+                                                feriesHours += hours;
+                                            } else {
+                                                workHours += hours;
+                                            }
+                                        }
+                                        break;
+                                    case 'retard':
+                                        if (shift.retardMinutes) {
+                                            retardMinutes += parseInt(shift.retardMinutes) || 0;
                                         }
                                         break;
                                     case 'absent':
@@ -3372,12 +4237,27 @@ let totalHours = 0;
                                         break;
                                     case 'conges':
                                         conges++;
+                                        if (shift.hours) {
+                                            workHours += parseHours(shift.hours);
+                                            hasWork = true;
+                                        }
                                         break;
                                     case 'repos':
                                         repos++;
                                         break;
                                     case 'cours':
                                         cours++;
+                                        if (shift.hours) {
+                                            workHours += parseHours(shift.hours);
+                                            hasWork = true;
+                                        }
+                                        break;
+                                    case 'ferie':
+                                        // Case Férié = jour férié NON travaillé (payé)
+                                        if (shift.hours) {
+                                            workHours += parseHours(shift.hours);
+                                            hasWork = true;
+                                        }
                                         break;
                                 }
                             });
@@ -3389,9 +4269,25 @@ let totalHours = 0;
                 currentWeekStart.setDate(currentWeekStart.getDate() + 7);
             }
             
-            const monthName = currentDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-            const expectedHours = Math.floor((workDays / 5) * 35); // Estimation basée sur 35h/semaine
-            const overtime = Math.max(0, workHours - expectedHours);
+            const retardHours = retardMinutes / 60;
+            
+            // Calculer les heures attendues = semaines COMPLÈTES × contrat
+            const expectedHours = completeWeeks * contractHours;
+            
+            const effectiveHours = workHours - retardHours;
+            const diff = effectiveHours - expectedHours;
+            const overtime = Math.max(0, diff);
+            const deficit = Math.max(0, -diff);
+            
+            // Déterminer la couleur selon le statut
+            let statusColor = '#10b981';
+            if (overtime > 0) {
+                statusColor = '#ef4444';
+            } else if (deficit > 0) {
+                statusColor = '#f59e0b';
+            }
+            
+            const diffText = diff >= 0 ? `+${formatHours(diff)}` : `-${formatHours(Math.abs(diff))}`;
             
             const recapCard = document.createElement('div');
             recapCard.style.cssText = `
@@ -3403,33 +4299,50 @@ let totalHours = 0;
             `;
             
             recapCard.innerHTML = `
-                <h4 style="color: #374151; margin-bottom: 5px; font-size: 1.2em; font-weight: 700;">${employee.name}</h4>
-                <p style="color: #6b7280; font-size: 12px; margin-bottom: 15px; text-transform: capitalize;">${monthName}</p>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(102, 126, 234, 0.1); border-radius: 8px;">
-                        <span style="font-weight: 600;">⏰ Total heures:</span>
-                        <span style="font-weight: 700; color: ${workHours > expectedHours ? '#ef4444' : '#10b981'};">${formatHours(workHours)}</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <h4 style="color: #374151; font-size: 1.2em; font-weight: 700;">${employee.name}</h4>
+                    <span style="background: ${statusColor}20; color: ${statusColor}; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;">📋 ${contractHours}h</span>
+                </div>
+                <p style="color: #6b7280; font-size: 12px; margin-bottom: 10px; text-transform: capitalize;">${monthName}</p>
+                <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+                    <span style="background: ${statusColor}15; color: ${statusColor}; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;">Solde: ${diffText}</span>
+                    <span style="background: rgba(107, 114, 128, 0.15); color: #6b7280; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;">${completeWeeks} sem × ${contractHours}h = ${formatHours(expectedHours)}</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(102, 126, 234, 0.1); border-radius: 8px;">
+                        <span style="font-weight: 600;">⏰ Heures travail:</span>
+                        <span style="font-weight: 700; color: #667eea;">${formatHours(workHours)}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: ${retardHours > 0 ? 'rgba(249, 115, 22, 0.1)' : 'rgba(107, 114, 128, 0.1)'}; border-radius: 8px;">
+                        <span style="font-weight: 600;">⏰ Retards:</span>
+                        <span style="font-weight: 700; color: ${retardHours > 0 ? '#f97316' : '#6b7280'};">${retardHours > 0 ? '-' : ''}${formatHours(retardHours)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: ${overtime > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(107, 114, 128, 0.1)'}; border-radius: 8px;">
                         <span style="font-weight: 600;">⚡ Heures sup:</span>
-                        <span style="font-weight: 700; color: #ef4444;">${formatHours(overtime)}</span>
+                        <span style="font-weight: 700; color: ${overtime > 0 ? '#ef4444' : '#6b7280'};">${formatHours(overtime)}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(107, 114, 128, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(107, 114, 128, 0.1); border-radius: 8px;">
                         <span style="font-weight: 600;">📅 Jours travail:</span>
                         <span style="font-weight: 700; color: #6b7280;">${workDays}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;">
                         <span style="font-weight: 600;">🏖️ Congés:</span>
                         <span style="font-weight: 700; color: #10b981;">${conges}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(239, 68, 68, 0.1); border-radius: 8px;">
                         <span style="font-weight: 600;">❌ Absences:</span>
                         <span style="font-weight: 700; color: #ef4444;">${absences}</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; padding: 8px; background: rgba(245, 158, 11, 0.1); border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(245, 158, 11, 0.1); border-radius: 8px;">
                         <span style="font-weight: 600;">😴 Repos:</span>
                         <span style="font-weight: 700; color: #6b7280;">${repos}</span>
                     </div>
+                    ${(dimanchesCount > 0 || feriesCount > 0) ? `
+                    <div style="display: flex; justify-content: space-between; padding: 6px 8px; background: rgba(139, 92, 246, 0.1); border-radius: 8px;">
+                        <span style="font-weight: 600;">🎌 Dim/Fériés:</span>
+                        <span style="font-weight: 700; color: #8b5cf6;">${dimanchesCount > 0 ? dimanchesCount + 'D(' + formatHours(dimanchesHours) + ')' : ''}${dimanchesCount > 0 && feriesCount > 0 ? '/' : ''}${feriesCount > 0 ? feriesCount + 'F(' + formatHours(feriesHours) + ')' : ''}</span>
+                    </div>
+                    ` : ''}
                 </div>
             `;
             
@@ -3573,7 +4486,13 @@ let totalHours = 0;
         try {
             globalState = {
                 employees: [],
-                currentWeek: new Date(),
+                currentWeek: (() => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    today.setDate(today.getDate() + diff);
+    return today;
+})(),
                 isAdminMode: false,
                 draggedItem: null,
                 customTemplates: [],
@@ -4464,8 +5383,1946 @@ let totalHours = 0;
         }
     }  // <- Cette accolade ferme le try-catch
 
+    // ============================================
+    // FONCTIONS D'ÉDITION EMPLOYÉ
+    // ============================================
+    function openEditEmployeeModal(employeeId) {
+        try {
+            const employee = globalState.employees.find(emp => emp.id === employeeId);
+            if (!employee) {
+                showToast('Employé non trouvé', 'error');
+                return;
+            }
+            
+            document.getElementById('editEmpId').value = employee.id;
+            document.getElementById('editEmpName').value = employee.name;
+            document.getElementById('editEmpRole').value = employee.role || '';
+            document.getElementById('editEmpContractHours').value = employee.contractHours || 35;
+            
+            document.getElementById('editEmployeeModal').style.display = 'block';
+            
+        } catch (error) {
+            console.error('Erreur ouverture modale édition:', error);
+            showToast('Erreur lors de l\'ouverture', 'error');
+        }
+    }
+    
+    function saveEditedEmployee(event) {
+        event.preventDefault();
+        
+        try {
+            saveStateForUndo();
+            
+            const employeeId = document.getElementById('editEmpId').value;
+            const newName = document.getElementById('editEmpName').value.trim();
+            const newRole = document.getElementById('editEmpRole').value.trim();
+            const newContractHours = parseFloat(document.getElementById('editEmpContractHours').value) || 35;
+            
+            if (!newName) {
+                showToast('Le nom est requis', 'error');
+                return;
+            }
+            
+            // Vérifier si le nom existe déjà (autre employé)
+            const existingEmployee = globalState.employees.find(
+                emp => emp.id !== employeeId && emp.name.toLowerCase() === newName.toLowerCase()
+            );
+            if (existingEmployee) {
+                showToast('Un autre employé avec ce nom existe déjà', 'error');
+                return;
+            }
+            
+            // Trouver et mettre à jour l'employé
+            const employee = globalState.employees.find(emp => emp.id === employeeId);
+            if (!employee) {
+                showToast('Employé non trouvé', 'error');
+                return;
+            }
+            
+            employee.name = newName;
+            employee.role = newRole || 'Employé';
+            employee.contractHours = newContractHours;
+            
+            closeModal();
+            renderPlanning();
+            updateSummary();
+            saveData();
+            
+            showToast(`${newName} modifié avec succès (Contrat: ${newContractHours}h)`, 'success');
+            
+        } catch (error) {
+            console.error('Erreur sauvegarde employé:', error);
+            showToast('Erreur lors de la sauvegarde', 'error');
+        }
+    }
+
+    // ============================================
+    // JOURS FÉRIÉS FRANÇAIS
+    // ============================================
+    function getJoursFeries(year) {
+        const feries = [];
+        
+        // Fêtes fixes
+        feries.push({ date: new Date(year, 0, 1), nom: "Jour de l'An" });
+        feries.push({ date: new Date(year, 4, 1), nom: "Fête du Travail" });
+        feries.push({ date: new Date(year, 4, 8), nom: "Victoire 1945" });
+        feries.push({ date: new Date(year, 6, 14), nom: "Fête Nationale" });
+        feries.push({ date: new Date(year, 7, 15), nom: "Assomption" });
+        feries.push({ date: new Date(year, 10, 1), nom: "Toussaint" });
+        feries.push({ date: new Date(year, 10, 11), nom: "Armistice" });
+        feries.push({ date: new Date(year, 11, 25), nom: "Noël" });
+        
+        // Calcul de Pâques (algorithme de Meeus/Jones/Butcher)
+        const a = year % 19;
+        const b = Math.floor(year / 100);
+        const c = year % 100;
+        const d = Math.floor(b / 4);
+        const e = b % 4;
+        const f = Math.floor((b + 8) / 25);
+        const g = Math.floor((b - f + 1) / 3);
+        const h = (19 * a + b - d - g + 15) % 30;
+        const i = Math.floor(c / 4);
+        const k = c % 4;
+        const l = (32 + 2 * e + 2 * i - h - k) % 7;
+        const m = Math.floor((a + 11 * h + 22 * l) / 451);
+        const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+        const day = ((h + l - 7 * m + 114) % 31) + 1;
+        
+        const paques = new Date(year, month, day);
+        
+        // Lundi de Pâques (Pâques + 1)
+        const lundiPaques = new Date(paques);
+        lundiPaques.setDate(lundiPaques.getDate() + 1);
+        feries.push({ date: lundiPaques, nom: "Lundi de Pâques" });
+        
+        // Ascension (Pâques + 39)
+        const ascension = new Date(paques);
+        ascension.setDate(ascension.getDate() + 39);
+        feries.push({ date: ascension, nom: "Ascension" });
+        
+        // Lundi de Pentecôte (Pâques + 50)
+        const pentecote = new Date(paques);
+        pentecote.setDate(pentecote.getDate() + 50);
+        feries.push({ date: pentecote, nom: "Lundi de Pentecôte" });
+        
+        return feries;
+    }
+    
+    function isJourFerie(date) {
+        const feries = getJoursFeries(date.getFullYear());
+        return feries.find(f => 
+            f.date.getDate() === date.getDate() && 
+            f.date.getMonth() === date.getMonth()
+        );
+    }
+    
+    function isDimanche(date) {
+        return date.getDay() === 0;
+    }
+
+    // ============================================
+    // GESTION DES RETARDS
+    // ============================================
+    function openRetardModal(employeeId, day) {
+        document.getElementById('retardEmployeeId').value = employeeId;
+        document.getElementById('retardDay').value = day;
+        document.getElementById('retardHeures').value = 0;
+        document.getElementById('retardMinutes').value = 30;
+        document.getElementById('retardMotif').value = '';
+        document.getElementById('retardModal').style.display = 'block';
+    }
+    
+    function saveRetard(event) {
+        event.preventDefault();
+        
+        try {
+            const employeeId = document.getElementById('retardEmployeeId').value;
+            const day = parseInt(document.getElementById('retardDay').value);
+            const heures = parseInt(document.getElementById('retardHeures').value) || 0;
+            const minutes = parseInt(document.getElementById('retardMinutes').value) || 0;
+            const motif = document.getElementById('retardMotif').value.trim();
+            
+            const totalMinutes = heures * 60 + minutes;
+            if (totalMinutes === 0) {
+                showToast('Veuillez saisir une durée de retard', 'error');
+                return;
+            }
+            
+            const employee = globalState.employees.find(emp => emp.id === employeeId);
+            if (!employee) {
+                showToast('Employé non trouvé', 'error');
+                return;
+            }
+            
+            if (!employee.planning) employee.planning = {};
+            const weekKey = getWeekKey();
+            if (!employee.planning[weekKey]) employee.planning[weekKey] = {};
+            if (!employee.planning[weekKey][day]) employee.planning[weekKey][day] = [];
+            
+            // Formater la durée du retard
+            let retardText = '';
+            if (heures > 0 && minutes > 0) {
+                retardText = `⏰ -${heures}h${minutes.toString().padStart(2, '0')}`;
+            } else if (heures > 0) {
+                retardText = `⏰ -${heures}h`;
+            } else {
+                retardText = `⏰ -${minutes}min`;
+            }
+            if (motif) retardText += ` (${motif})`;
+            
+            const newShift = {
+                id: generateId(),
+                type: 'retard',
+                text: retardText,
+                retardMinutes: totalMinutes,
+                motif: motif
+            };
+            
+            employee.planning[weekKey][day].push(newShift);
+            
+            closeModal();
+            renderPlanning();
+            updateSummary();
+            saveData();
+            
+            showToast(`Retard de ${heures}h${minutes.toString().padStart(2, '0')} ajouté`, 'success');
+            
+        } catch (error) {
+            console.error('Erreur sauvegarde retard:', error);
+            showToast('Erreur lors de l\'ajout du retard', 'error');
+        }
+    }
+
+    // ============================================
+    // GESTION HEURES COURS / CONGÉS / FÉRIÉ
+    // ============================================
+    function openHeuresAbsenceModal(employeeId, day, type) {
+        const employee = globalState.employees.find(emp => emp.id === employeeId);
+        const contractHours = employee ? (employee.contractHours || 35) : 35;
+        
+        // Calculer les heures par défaut selon le contrat (heures/jour = contrat/5)
+        const defaultHours = Math.floor(contractHours / 5);
+        const defaultMinutes = Math.round((contractHours / 5 - defaultHours) * 60);
+        
+        // Mettre à jour le titre et le bouton selon le type
+        const titles = {
+            'cours': '📚 Cours / Formation',
+            'conges': '🏖️ Congés',
+            'ferie': '🎌 Jour Férié',
+            'absent': '❌ Absence'
+        };
+        const btnColors = {
+            'cours': 'background: linear-gradient(135deg, #f59e0b, #d97706);',
+            'conges': 'background: linear-gradient(135deg, #10b981, #059669);',
+            'ferie': 'background: linear-gradient(135deg, #8b5cf6, #7c3aed);',
+            'absent': 'background: linear-gradient(135deg, #ef4444, #dc2626);'
+        };
+        
+        document.getElementById('heuresAbsenceTitle').textContent = titles[type] || '📋 Saisir les heures';
+        document.getElementById('heuresAbsenceSubmitBtn').style.cssText = btnColors[type] || '';
+        
+        document.getElementById('heuresAbsenceEmployeeId').value = employeeId;
+        document.getElementById('heuresAbsenceDay').value = day;
+        document.getElementById('heuresAbsenceType').value = type;
+        document.getElementById('heuresAbsenceHeures').value = defaultHours;
+        document.getElementById('heuresAbsenceMinutes').value = defaultMinutes;
+        document.getElementById('heuresAbsenceStart').value = '09:00';
+        document.getElementById('heuresAbsenceEnd').value = '17:00';
+        document.getElementById('heuresAbsenceNote').value = '';
+        
+        document.getElementById('heuresAbsenceModal').style.display = 'block';
+    }
+    
+    function calculateHeuresFromTime() {
+        const start = document.getElementById('heuresAbsenceStart').value;
+        const end = document.getElementById('heuresAbsenceEnd').value;
+        
+        if (start && end) {
+            const hours = calculateHours(start, end);
+            const h = Math.floor(hours);
+            const m = Math.round((hours - h) * 60);
+            
+            document.getElementById('heuresAbsenceHeures').value = h;
+            document.getElementById('heuresAbsenceMinutes').value = m;
+            
+            showToast(`Heures calculées : ${formatHours(hours)}`, 'success');
+        }
+    }
+    
+    function saveHeuresAbsence(event) {
+        event.preventDefault();
+        
+        try {
+            const employeeId = document.getElementById('heuresAbsenceEmployeeId').value;
+            const day = parseInt(document.getElementById('heuresAbsenceDay').value);
+            const type = document.getElementById('heuresAbsenceType').value;
+            const heures = parseInt(document.getElementById('heuresAbsenceHeures').value) || 0;
+            const minutes = parseInt(document.getElementById('heuresAbsenceMinutes').value) || 0;
+            const note = document.getElementById('heuresAbsenceNote').value.trim();
+            const startTime = document.getElementById('heuresAbsenceStart').value;
+            const endTime = document.getElementById('heuresAbsenceEnd').value;
+            
+            const employee = globalState.employees.find(emp => emp.id === employeeId);
+            if (!employee) {
+                showToast('Employé non trouvé', 'error');
+                return;
+            }
+            
+            if (!employee.planning) employee.planning = {};
+            const weekKey = getWeekKey();
+            if (!employee.planning[weekKey]) employee.planning[weekKey] = {};
+            if (!employee.planning[weekKey][day]) employee.planning[weekKey][day] = [];
+            
+            // Formater le texte à afficher
+            const totalHours = heures + minutes / 60;
+            const hoursText = formatHours(totalHours);
+            
+            const labels = {
+                'cours': '📚 Cours',
+                'conges': '🏖️ Congés',
+                'ferie': '🎌 Férié',
+                'absent': '❌ Absent'
+            };
+            
+            // Afficher les horaires dans la case si renseignés
+            let displayText = `${labels[type]}`;
+            if (startTime && endTime && type !== 'absent') {
+                displayText += ` ${startTime}-${endTime}`;
+            }
+            displayText += ` (${hoursText})`;
+            if (note) displayText += ` - ${note}`;
+            
+            const newShift = {
+                id: generateId(),
+                type: type,
+                text: displayText,
+                hours: hoursText,
+                startTime: startTime,
+                endTime: endTime,
+                note: note
+            };
+            
+            employee.planning[weekKey][day].push(newShift);
+            
+            closeModal();
+            renderPlanning();
+            updateSummary();
+            saveData();
+            
+            showToast(`${labels[type]} ajouté (${hoursText})`, 'success');
+            
+        } catch (error) {
+            console.error('Erreur sauvegarde heures absence:', error);
+            showToast('Erreur lors de l\'ajout', 'error');
+        }
+    }
+
+    // ============================================
+    // CALCUL DU SOLDE MENSUEL CUMULÉ
+    // Le solde repart à 0 automatiquement chaque 1er du mois
+    // ============================================
+    function calculateMonthlySolde(employee, targetMonth, targetYear) {
+        const contractHours = employee.contractHours || 35;
+        let totalWorkedHours = 0;
+        let totalRetardMinutes = 0;
+        let workDaysInMonth = 0;
+        
+        // Calculer le nombre de semaines COMPLÈTES dans le mois (lundi-dimanche)
+        const firstDayOfMonth = new Date(targetYear, targetMonth, 1);
+        const lastDayOfMonth = new Date(targetYear, targetMonth + 1, 0);
+        
+        // Trouver le premier lundi du mois
+        let firstMonday = new Date(firstDayOfMonth);
+        while (firstMonday.getDay() !== 1) {
+            firstMonday.setDate(firstMonday.getDate() + 1);
+        }
+        // Trouver le dernier dimanche du mois
+        let lastSunday = new Date(lastDayOfMonth);
+        while (lastSunday.getDay() !== 0) {
+            lastSunday.setDate(lastSunday.getDate() - 1);
+        }
+        // Nombre de semaines complètes
+        const completeWeeks = Math.max(0, Math.floor((lastSunday - firstMonday) / (7 * 24 * 60 * 60 * 1000)) + 1);
+        
+        // Vérifier si une RAZ manuelle a été faite ce mois-ci
+        let razDate = null;
+        if (employee.soldeRaz) {
+            const razD = new Date(employee.soldeRaz);
+            if (razD.getMonth() === targetMonth && razD.getFullYear() === targetYear) {
+                razDate = razD;
+            }
+        }
+        
+        // Parcourir toutes les semaines du mois
+        let currentWeekStart = new Date(firstDayOfMonth);
+        const dayOfWeek = currentWeekStart.getDay();
+        const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        currentWeekStart.setDate(currentWeekStart.getDate() + diff);
+        
+        while (currentWeekStart <= lastDayOfMonth) {
+            const year = currentWeekStart.getFullYear();
+            const firstDay = new Date(year, 0, 1);
+            const pastDays = (currentWeekStart - firstDay) / 86400000;
+            const weekNumber = Math.ceil((pastDays + firstDay.getDay() + 1) / 7);
+            const weekKey = `${year}-W${weekNumber}`;
+            
+            if (employee.planning && employee.planning[weekKey]) {
+                Object.keys(employee.planning[weekKey]).forEach(dayIndex => {
+                    const dayShifts = employee.planning[weekKey][dayIndex];
+                    const shiftDate = new Date(currentWeekStart);
+                    shiftDate.setDate(shiftDate.getDate() + parseInt(dayIndex));
+                    
+                    // IMPORTANT: Ne compter que les jours dans les semaines COMPLÈTES
+                    // (entre le premier lundi et le dernier dimanche du mois)
+                    if (shiftDate >= firstMonday && shiftDate <= lastSunday && shiftDate.getMonth() === targetMonth && shiftDate.getFullYear() === targetYear) {
+                        // Si RAZ, ne compter que les jours après la RAZ
+                        if (razDate && shiftDate < razDate) return;
+                        
+                        let dayHasWork = false;
+                        dayShifts.forEach(shift => {
+                            // Compter les heures de travail
+                            if (shift.type === 'work' && shift.hours) {
+                                totalWorkedHours += parseHours(shift.hours);
+                                dayHasWork = true;
+                            }
+                            // Compter les heures de Cours, Congés et Férié (si elles ont des heures)
+                            if (['cours', 'conges', 'ferie'].includes(shift.type) && shift.hours) {
+                                totalWorkedHours += parseHours(shift.hours);
+                                dayHasWork = true;
+                            }
+                            // Soustraire les retards
+                            if (shift.type === 'retard') {
+                                let mins = 0;
+                                if (shift.retardMinutes !== undefined && shift.retardMinutes !== null) {
+                                    mins = parseInt(shift.retardMinutes) || 0;
+                                }
+                                totalRetardMinutes += mins;
+                            }
+                        });
+                        if (dayHasWork) workDaysInMonth++;
+                    }
+                });
+            }
+            
+            currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+        }
+        
+        // Calculer les heures attendues = semaines COMPLÈTES × contrat
+        const expectedHours = completeWeeks * contractHours;
+        
+        // Prendre en compte les régularisations du mois
+        let regularisationTotal = 0;
+        const targetMonthKey = `${targetYear}-${(targetMonth + 1).toString().padStart(2, '0')}`;
+        if (employee.regularisations) {
+            employee.regularisations.forEach(reg => {
+                // Utiliser le champ 'mois' si disponible, sinon fallback sur la date
+                if (reg.mois) {
+                    if (reg.mois === targetMonthKey) {
+                        regularisationTotal += reg.heures;
+                    }
+                } else {
+                    const regDate = new Date(reg.date);
+                    if (regDate.getMonth() === targetMonth && regDate.getFullYear() === targetYear) {
+                        regularisationTotal += reg.heures;
+                    }
+                }
+            });
+        }
+        
+        // Soustraire les retards des heures travaillées
+        const effectiveWorkedHours = totalWorkedHours - (totalRetardMinutes / 60);
+        // Calculer le solde AVANT régularisation
+        const soldeAvantRegul = effectiveWorkedHours - expectedHours;
+        // Le solde APRÈS régularisation : on ajoute les heures régularisées (elles "compensent" le solde)
+        // Si solde = -5h et on régularise 5h, le nouveau solde = -5h + 5h = 0h
+        const solde = soldeAvantRegul + regularisationTotal;
+        
+        return {
+            worked: totalWorkedHours,
+            retard: totalRetardMinutes / 60,
+            effective: effectiveWorkedHours,
+            expected: expectedHours,
+            solde: solde,
+            workDays: workDaysInMonth,
+            completeWeeks: completeWeeks,
+            regularise: regularisationTotal
+        };
+    }
+
+    // ============================================
+    // RÉGULARISATION DES HEURES
+    // ============================================
+    function openRegularisationModal() {
+        const select = document.getElementById('regularisationEmploye');
+        select.innerHTML = '';
+        
+        globalState.employees.filter(emp => !emp.archived).forEach(emp => {
+            select.innerHTML += `<option value="${emp.id}">${emp.name}</option>`;
+        });
+        
+        updateRegularisationSolde();
+        updateRegularisationUI();
+        document.getElementById('regularisationModal').style.display = 'block';
+    }
+    
+    function updateRegularisationSolde() {
+        const employeeId = document.getElementById('regularisationEmploye').value;
+        const employee = globalState.employees.find(emp => emp.id === employeeId);
+        if (!employee) return;
+        
+        const currentDate = new Date(globalState.currentWeek);
+        const monthSolde = calculateMonthlySolde(employee, currentDate.getMonth(), currentDate.getFullYear());
+        
+        // Calculer le solde cumulé (tous les mois jusqu'au mois actuel)
+        const soldeCumule = calculateCumulativeSolde(employee, currentDate.getMonth(), currentDate.getFullYear());
+        
+        const soldeElement = document.getElementById('regularisationSoldeActuel');
+        const solde = monthSolde.solde;
+        
+        // Affichage du solde du mois
+        let soldeText = '';
+        if (solde >= 0) {
+            soldeText = `+${formatHours(solde)}`;
+            soldeElement.style.color = solde > 0 ? '#ef4444' : '#10b981';
+        } else {
+            soldeText = `-${formatHours(Math.abs(solde))}`;
+            soldeElement.style.color = '#f59e0b';
+        }
+        soldeElement.textContent = soldeText;
+        
+        // Afficher le solde cumulé
+        const cumulElement = document.getElementById('regularisationSoldeCumule');
+        let cumulText = soldeCumule >= 0 ? `+${formatHours(soldeCumule)}` : `-${formatHours(Math.abs(soldeCumule))}`;
+        let cumulColor = soldeCumule > 0 ? '#ef4444' : soldeCumule < 0 ? '#f59e0b' : '#10b981';
+        cumulElement.textContent = cumulText;
+        cumulElement.style.color = cumulColor;
+        
+        // Mettre à jour les heures par défaut
+        const heures = Math.floor(Math.abs(solde));
+        const minutes = Math.round((Math.abs(solde) - heures) * 60);
+        document.getElementById('regularisationHeures').value = heures;
+        document.getElementById('regularisationMinutes').value = minutes;
+        
+        // Afficher l'historique des régularisations
+        const historiqueElement = document.getElementById('regularisationHistorique');
+        const targetMonthKey = `${currentDate.getFullYear()}-${(currentDate.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (employee.regularisations && employee.regularisations.length > 0) {
+            const monthRegs = employee.regularisations.filter(reg => {
+                if (reg.mois) {
+                    return reg.mois === targetMonthKey;
+                } else {
+                    const regDate = new Date(reg.date);
+                    return regDate.getMonth() === currentDate.getMonth() && regDate.getFullYear() === currentDate.getFullYear();
+                }
+            });
+            
+            if (monthRegs.length > 0) {
+                let html = '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #d1d5db;">';
+                html += '<div style="display: flex; justify-content: space-between; align-items: center;">';
+                html += '<strong>📜 Régularisations ce mois :</strong>';
+                html += `<button type="button" onclick="clearAllRegularisations('${employee.id}')" style="padding: 2px 8px; font-size: 10px; background: #fee2e2; color: #dc2626; border: none; border-radius: 4px; cursor: pointer;">🗑️ Tout supprimer</button>`;
+                html += '</div>';
+                html += '<ul style="margin: 5px 0; padding-left: 15px; list-style: none;">';
+                monthRegs.forEach(reg => {
+                    const dateStr = new Date(reg.date).toLocaleDateString('fr-FR');
+                    const icon = reg.type === 'paye' ? '💵' : reg.type === 'recupere' ? '🔄' : reg.type === 'report_entrant' ? '📥' : '📅';
+                    const typeLabel = reg.type === 'paye' ? 'payé' : reg.type === 'recupere' ? 'récupéré' : reg.type === 'report_entrant' ? 'report entrant' : 'reporté';
+                    const heuresText = reg.heures >= 0 ? `+${formatHours(reg.heures)}` : `-${formatHours(Math.abs(reg.heures))}`;
+                    html += `<li style="display: flex; justify-content: space-between; align-items: center; padding: 3px 0;">`;
+                    html += `<span>${icon} ${dateStr} : ${heuresText} ${typeLabel}${reg.note ? ` (${reg.note})` : ''}</span>`;
+                    html += `<button type="button" onclick="deleteRegularisation('${employee.id}', '${reg.id}')" style="padding: 1px 5px; font-size: 10px; background: #fee2e2; color: #dc2626; border: none; border-radius: 3px; cursor: pointer;">✕</button>`;
+                    html += `</li>`;
+                });
+                html += '</ul></div>';
+                historiqueElement.innerHTML = html;
+            } else {
+                historiqueElement.innerHTML = '';
+            }
+        } else {
+            historiqueElement.innerHTML = '';
+        }
+        
+        updateRegularisationReste();
+    }
+    
+    function deleteRegularisation(employeeId, regId) {
+        const employee = globalState.employees.find(emp => emp.id === employeeId);
+        if (!employee || !employee.regularisations) return;
+        
+        const regIndex = employee.regularisations.findIndex(r => r.id === regId);
+        if (regIndex === -1) return;
+        
+        const reg = employee.regularisations[regIndex];
+        if (!confirm(`Supprimer cette régularisation ?\n${formatHours(Math.abs(reg.heures))} ${reg.type}`)) return;
+        
+        employee.regularisations.splice(regIndex, 1);
+        saveData();
+        updateRegularisationSolde();
+        updateSummary();
+        showToast('Régularisation supprimée', 'success');
+    }
+    
+    function clearAllRegularisations(employeeId) {
+        const employee = globalState.employees.find(emp => emp.id === employeeId);
+        if (!employee || !employee.regularisations) return;
+        
+        const currentDate = new Date(globalState.currentWeek);
+        const targetMonthKey = `${currentDate.getFullYear()}-${(currentDate.getMonth() + 1).toString().padStart(2, '0')}`;
+        
+        const monthRegs = employee.regularisations.filter(reg => {
+            if (reg.mois) return reg.mois === targetMonthKey;
+            const regDate = new Date(reg.date);
+            return regDate.getMonth() === currentDate.getMonth() && regDate.getFullYear() === currentDate.getFullYear();
+        });
+        
+        if (monthRegs.length === 0) return;
+        
+        if (!confirm(`Supprimer TOUTES les ${monthRegs.length} régularisations de ce mois pour ${employee.name} ?`)) return;
+        
+        // Supprimer les régularisations du mois
+        employee.regularisations = employee.regularisations.filter(reg => {
+            if (reg.mois) return reg.mois !== targetMonthKey;
+            const regDate = new Date(reg.date);
+            return !(regDate.getMonth() === currentDate.getMonth() && regDate.getFullYear() === currentDate.getFullYear());
+        });
+        
+        saveData();
+        updateRegularisationSolde();
+        updateSummary();
+        showToast(`${monthRegs.length} régularisations supprimées pour ${employee.name}`, 'success');
+    }
+    
+    // Calculer le solde cumulé de tous les mois jusqu'au mois cible
+    function calculateCumulativeSolde(employee, targetMonth, targetYear) {
+        let cumulativeSolde = 0;
+        
+        // Utiliser la date de RAZ cumul si définie, sinon janvier de l'année en cours
+        let startYear = targetYear;
+        let startMonth = 0; // Janvier par défaut
+        
+        if (employee.cumulStartDate) {
+            const startDate = new Date(employee.cumulStartDate);
+            startYear = startDate.getFullYear();
+            startMonth = startDate.getMonth();
+        }
+        
+        // Ajouter le solde de départ s'il existe
+        if (employee.cumulStartBalance !== undefined) {
+            cumulativeSolde = employee.cumulStartBalance;
+        }
+        
+        // Ne pas calculer si la date cible est avant la date de début
+        if (targetYear < startYear || (targetYear === startYear && targetMonth < startMonth)) {
+            return cumulativeSolde; // Retourner juste le solde de départ
+        }
+        
+        for (let year = startYear; year <= targetYear; year++) {
+            const monthStart = (year === startYear) ? startMonth : 0;
+            const monthEnd = (year === targetYear) ? targetMonth : 11;
+            
+            for (let month = monthStart; month <= monthEnd; month++) {
+                const monthSolde = calculateMonthlySolde(employee, month, year);
+                cumulativeSolde += monthSolde.solde;
+            }
+        }
+        
+        return cumulativeSolde;
+    }
+    
+    // Fonctions pour la RAZ Cumul
+    function openRazCumulModal() {
+        const employeeId = document.getElementById('regularisationEmploye').value;
+        const employee = globalState.employees.find(emp => emp.id === employeeId);
+        if (!employee) return;
+        
+        document.getElementById('razCumulEmployeeName').textContent = employee.name;
+        
+        // Définir le mois actuel par défaut
+        const currentDate = new Date(globalState.currentWeek);
+        const monthValue = `${currentDate.getFullYear()}-${(currentDate.getMonth() + 1).toString().padStart(2, '0')}`;
+        document.getElementById('razCumulDate').value = monthValue;
+        
+        // Réinitialiser les champs de solde de départ
+        document.getElementById('razCumulSigne').value = '-';
+        document.getElementById('razCumulHeures').value = 0;
+        document.getElementById('razCumulMinutes').value = 0;
+        
+        // Si un solde de départ existe déjà, le pré-remplir
+        if (employee.cumulStartBalance !== undefined && employee.cumulStartBalance !== 0) {
+            const balance = employee.cumulStartBalance;
+            document.getElementById('razCumulSigne').value = balance >= 0 ? '+' : '-';
+            const absBalance = Math.abs(balance);
+            document.getElementById('razCumulHeures').value = Math.floor(absBalance);
+            document.getElementById('razCumulMinutes').value = Math.round((absBalance - Math.floor(absBalance)) * 60);
+        }
+        
+        document.getElementById('razCumulModal').style.display = 'block';
+    }
+    
+    function closeRazCumulModal() {
+        document.getElementById('razCumulModal').style.display = 'none';
+    }
+    
+    function executeRazCumul() {
+        const employeeId = document.getElementById('regularisationEmploye').value;
+        const employee = globalState.employees.find(emp => emp.id === employeeId);
+        if (!employee) return;
+        
+        const monthInput = document.getElementById('razCumulDate').value;
+        if (!monthInput) {
+            showToast('Veuillez sélectionner un mois', 'error');
+            return;
+        }
+        
+        // Récupérer le solde de départ
+        const signe = document.getElementById('razCumulSigne').value;
+        const heures = parseInt(document.getElementById('razCumulHeures').value) || 0;
+        const minutes = parseInt(document.getElementById('razCumulMinutes').value) || 0;
+        const soldeDepart = (heures + minutes / 60) * (signe === '-' ? -1 : 1);
+        
+        // Stocker la date de début et le solde de départ
+        employee.cumulStartDate = `${monthInput}-01`;
+        employee.cumulStartBalance = soldeDepart;
+        
+        saveData();
+        closeRazCumulModal();
+        updateRegularisationSolde();
+        
+        const monthName = new Date(monthInput + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+        const soldeText = soldeDepart === 0 ? '0h' : (soldeDepart >= 0 ? `+${formatHours(soldeDepart)}` : `-${formatHours(Math.abs(soldeDepart))}`);
+        showToast(`Cumul de ${employee.name} : départ ${soldeText} depuis ${monthName}`, 'success');
+    }
+    
+    // Fonctions pour l'export Mail
+    function openExportMailModal() {
+        // Définir le mois actuel
+        const currentDate = new Date(globalState.currentWeek);
+        const monthValue = `${currentDate.getFullYear()}-${(currentDate.getMonth() + 1).toString().padStart(2, '0')}`;
+        document.getElementById('exportMois').value = monthValue;
+        
+        // Générer la liste des employés avec cases à cocher et prime
+        const container = document.getElementById('exportEmployesList');
+        container.innerHTML = '';
+        
+        globalState.employees.filter(emp => !emp.archived).forEach(emp => {
+            const div = document.createElement('div');
+            div.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 10px 8px; border-bottom: 1px solid #e5e7eb;';
+            div.innerHTML = `
+                <input type="checkbox" id="export_${emp.id}" value="${emp.id}" checked style="width: 18px; height: 18px; cursor: pointer;">
+                <label for="export_${emp.id}" style="cursor: pointer; flex: 1; font-weight: 500;">${emp.name}</label>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <span style="font-size: 11px; color: #6b7280;">Prime:</span>
+                    <input type="number" id="prime_${emp.id}" min="0" step="0.01" placeholder="0" 
+                           style="width: 70px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; text-align: right;">
+                    <span style="font-size: 11px; color: #6b7280;">€</span>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+        
+        document.getElementById('exportComptableModal').style.display = 'block';
+    }
+    
+    function selectAllExportEmployees(checked) {
+        const checkboxes = document.querySelectorAll('#exportEmployesList input[type="checkbox"]');
+        checkboxes.forEach(cb => cb.checked = checked);
+    }
+    
+    function executeExportComptable() {
+        const monthInput = document.getElementById('exportMois').value;
+        if (!monthInput) {
+            showToast('Veuillez sélectionner un mois', 'error');
+            return;
+        }
+        
+        // Récupérer les employés sélectionnés avec leurs primes
+        const checkboxes = document.querySelectorAll('#exportEmployesList input[type="checkbox"]:checked');
+        const selectedData = Array.from(checkboxes).map(cb => {
+            const empId = cb.value;
+            const primeInput = document.getElementById(`prime_${empId}`);
+            const prime = primeInput ? parseFloat(primeInput.value) || 0 : 0;
+            return { id: empId, prime: prime };
+        });
+        
+        if (selectedData.length === 0) {
+            showToast('Veuillez sélectionner au moins un employé', 'error');
+            return;
+        }
+        
+        const format = document.querySelector('input[name="exportFormat"]:checked').value;
+        
+        // Générer le rapport
+        const [year, month] = monthInput.split('-').map(Number);
+        const exportDate = new Date(year, month - 1, 15); // Milieu du mois
+        const texte = generateExportTexteForMonth(exportDate, selectedData);
+        
+        if (format === 'email') {
+            // Copier dans le presse-papier
+            navigator.clipboard.writeText(texte).then(() => {
+                showToast('📋 Rapport copié dans le presse-papier !', 'success');
+            }).catch(() => {
+                // Fallback si clipboard ne fonctionne pas
+                const textarea = document.createElement('textarea');
+                textarea.value = texte;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showToast('📋 Rapport copié dans le presse-papier !', 'success');
+            });
+        } else {
+            // Télécharger en fichier texte
+            const monthName = exportDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            const blob = new Blob([texte], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Recap_Paie_${monthName.replace(' ', '_')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('📄 Fichier téléchargé !', 'success');
+        }
+        
+        closeModal();
+    }
+    
+    function updateRegularisationUI() {
+        const type = document.querySelector('input[name="regularisationType"]:checked').value;
+        const heuresGroup = document.getElementById('regularisationHeuresGroup');
+        
+        if (type === 'reporte') {
+            heuresGroup.style.display = 'none';
+        } else {
+            heuresGroup.style.display = 'block';
+        }
+    }
+    
+    function updateRegularisationReste() {
+        const employeeId = document.getElementById('regularisationEmploye').value;
+        const employee = globalState.employees.find(emp => emp.id === employeeId);
+        if (!employee) return;
+        
+        const currentDate = new Date(globalState.currentWeek);
+        const monthSolde = calculateMonthlySolde(employee, currentDate.getMonth(), currentDate.getFullYear());
+        const soldeCumule = calculateCumulativeSolde(employee, currentDate.getMonth(), currentDate.getFullYear());
+        const soldeTotal = Math.abs(monthSolde.solde);
+        const soldeCumulTotal = Math.abs(soldeCumule);
+        
+        const heures = parseInt(document.getElementById('regularisationHeures').value) || 0;
+        const minutes = parseInt(document.getElementById('regularisationMinutes').value) || 0;
+        const heuresRegul = heures + (minutes / 60);
+        
+        const resteMois = soldeTotal - heuresRegul;
+        const resteCumul = soldeCumulTotal - heuresRegul;
+        const resteElement = document.getElementById('regularisationReste');
+        
+        if (heuresRegul <= 0) {
+            resteElement.innerHTML = `📌 Saisissez les heures à régulariser`;
+            resteElement.style.background = '#f3f4f6';
+            resteElement.style.color = '#6b7280';
+        } else if (resteMois > 0) {
+            resteElement.innerHTML = `📌 Reste ce mois : <strong>${formatHours(resteMois)}</strong> | Reste cumulé : <strong>${formatHours(resteCumul)}</strong>`;
+            resteElement.style.background = '#fef3c7';
+            resteElement.style.color = '#92400e';
+        } else if (resteMois === 0) {
+            resteElement.innerHTML = `✅ Solde du mois entièrement régularisé${resteCumul > 0 ? ` | Reste cumulé : <strong>${formatHours(resteCumul)}</strong>` : ''}`;
+            resteElement.style.background = '#dcfce7';
+            resteElement.style.color = '#16a34a';
+        } else {
+            // On régularise plus que le mois
+            resteElement.innerHTML = `ℹ️ Régularise ${formatHours(heuresRegul)} (${formatHours(Math.abs(resteMois))} de plus que le mois)${resteCumul > 0 ? ` | Reste cumulé : <strong>${formatHours(resteCumul)}</strong>` : resteCumul < 0 ? ` | ⚠️ Dépasse le cumul de ${formatHours(Math.abs(resteCumul))}` : ' | ✅ Cumul soldé'}`;
+            resteElement.style.background = '#dbeafe';
+            resteElement.style.color = '#1e40af';
+        }
+    }
+    
+    function regulariserTout() {
+        const employeeId = document.getElementById('regularisationEmploye').value;
+        const employee = globalState.employees.find(emp => emp.id === employeeId);
+        if (!employee) return;
+        
+        const currentDate = new Date(globalState.currentWeek);
+        const monthSolde = calculateMonthlySolde(employee, currentDate.getMonth(), currentDate.getFullYear());
+        const soldeTotal = Math.abs(monthSolde.solde);
+        
+        const heures = Math.floor(soldeTotal);
+        const minutes = Math.round((soldeTotal - heures) * 60);
+        
+        document.getElementById('regularisationHeures').value = heures;
+        document.getElementById('regularisationMinutes').value = minutes;
+        updateRegularisationReste();
+    }
+    
+    function executeRegularisation() {
+        try {
+            // Désactiver le bouton pour éviter double-clic
+            const validateBtn = document.querySelector('#regularisationModal .btn.admin');
+            if (validateBtn) {
+                validateBtn.disabled = true;
+                validateBtn.textContent = '⏳ Enregistrement...';
+            }
+            
+            const employeeId = document.getElementById('regularisationEmploye').value;
+            const employee = globalState.employees.find(emp => emp.id === employeeId);
+            if (!employee) {
+                if (validateBtn) {
+                    validateBtn.disabled = false;
+                    validateBtn.textContent = '✅ Valider';
+                }
+                return;
+            }
+            
+            const type = document.querySelector('input[name="regularisationType"]:checked').value;
+            const note = document.getElementById('regularisationNote').value;
+            
+            const currentDate = new Date(globalState.currentWeek);
+            const monthName = currentDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            const currentMonth = `${currentDate.getFullYear()}-${(currentDate.getMonth() + 1).toString().padStart(2, '0')}`;
+            
+            // Initialiser le tableau des régularisations si nécessaire
+            if (!employee.regularisations) {
+                employee.regularisations = [];
+            }
+            
+            if (type === 'reporte') {
+                // Calculer le solde actuel du mois
+                const monthSolde = calculateMonthlySolde(employee, currentDate.getMonth(), currentDate.getFullYear());
+                const soldeActuel = monthSolde.solde;
+                
+                if (soldeActuel === 0) {
+                    showToast('Le solde est déjà à 0, rien à reporter', 'info');
+                    if (validateBtn) {
+                        validateBtn.disabled = false;
+                        validateBtn.textContent = '✅ Valider';
+                    }
+                    closeModal();
+                    return;
+                }
+                
+                // Créer une régularisation qui annule le solde du mois actuel
+                // Si solde = -5h, on ajoute +5h pour remettre à 0
+                // Si solde = +3h, on ajoute -3h pour remettre à 0
+                const heuresRegul = -soldeActuel; // Inverse du solde
+                
+                employee.regularisations.push({
+                    id: generateId(),
+                    date: new Date().toISOString(),
+                    mois: currentMonth,
+                    type: 'reporte',
+                    heures: heuresRegul,
+                    note: note || `Reporté au mois suivant (${monthName})`
+                });
+                
+                // Calculer le mois suivant
+                const nextMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+                const nextMonthKey = `${nextMonth.getFullYear()}-${(nextMonth.getMonth() + 1).toString().padStart(2, '0')}`;
+                const nextMonthName = nextMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+                
+                // Ajouter le solde au mois suivant (inverse de l'inverse = solde original)
+                employee.regularisations.push({
+                    id: generateId(),
+                    date: new Date().toISOString(),
+                    mois: nextMonthKey,
+                    type: 'report_entrant',
+                    heures: soldeActuel,
+                    note: `Report de ${monthName}`
+                });
+                
+                const soldeText = soldeActuel >= 0 ? `+${formatHours(soldeActuel)}` : `-${formatHours(Math.abs(soldeActuel))}`;
+                showToast(`✅ ${employee.name} : ${soldeText} reporté vers ${nextMonthName}`, 'success');
+                
+            } else {
+                const heures = parseInt(document.getElementById('regularisationHeures').value) || 0;
+                const minutes = parseInt(document.getElementById('regularisationMinutes').value) || 0;
+                const heuresTotal = heures + (minutes / 60);
+                
+                if (heuresTotal <= 0) {
+                    showToast('Veuillez entrer un nombre d\'heures valide', 'error');
+                    if (validateBtn) {
+                        validateBtn.disabled = false;
+                        validateBtn.textContent = '✅ Valider';
+                    }
+                    return;
+                }
+                
+                // Calculer le solde actuel pour déterminer le signe de la régularisation
+                const monthSolde = calculateMonthlySolde(employee, currentDate.getMonth(), currentDate.getFullYear());
+                
+                // Si solde positif (heures sup): régularisation négative (on soustrait)
+                // Si solde négatif (déficit): régularisation positive (on ajoute)
+                const heuresRegul = monthSolde.solde >= 0 ? -heuresTotal : heuresTotal;
+                
+                // Ajouter la régularisation
+                employee.regularisations.push({
+                    id: generateId(),
+                    date: new Date().toISOString(),
+                    mois: currentMonth,
+                    type: type,
+                    heures: heuresRegul,
+                    note: note || (type === 'paye' ? `Payé sur paie ${monthName}` : `Récupéré ${monthName}`)
+                });
+                
+                const typeLabel = type === 'paye' ? 'payées' : 'récupérées';
+                showToast(`✅ ${employee.name} : ${formatHours(heuresTotal)} ${typeLabel}`, 'success');
+            }
+            
+            // Reset des champs pour éviter confusion
+            document.getElementById('regularisationHeures').value = 0;
+            document.getElementById('regularisationMinutes').value = 0;
+            document.getElementById('regularisationNote').value = '';
+            
+            // DEBUG: Afficher les régularisations avant sauvegarde
+            console.log('🔍 DEBUG REGUL - Employé:', employee.name);
+            console.log('🔍 DEBUG REGUL - Régularisations:', JSON.stringify(employee.regularisations));
+            
+            // Fermer la modale et mettre à jour
+            closeModal();
+            updateSummary();
+            
+            // Sauvegarde avec confirmation - utiliser cleanData comme saveToCloudSilent
+            if (isFirebaseEnabled && currentUser && db) {
+                const cleanData = (obj) => {
+                    if (Array.isArray(obj)) {
+                        return obj.map(item => cleanData(item)).filter(item => item !== undefined);
+                    }
+                    if (obj && typeof obj === 'object') {
+                        const cleaned = {};
+                        Object.keys(obj).forEach(key => {
+                            const value = cleanData(obj[key]);
+                            if (value !== undefined) {
+                                cleaned[key] = value;
+                            }
+                        });
+                        return cleaned;
+                    }
+                    return obj;
+                };
+                
+                const dataToSave = {
+                    employees: cleanData(globalState.employees || []),
+                    customTemplates: cleanData(globalState.customTemplates || []),
+                    timeSlots: cleanData(globalState.timeSlots || []),
+                    weekTemplates: cleanData(globalState.weekTemplates || []),
+                    currentWeek: globalState.currentWeek.toISOString(),
+                    lastSave: new Date().toISOString(),
+                    version: '3.1',
+                    userId: currentUser.uid
+                };
+                
+                // DEBUG: Vérifier que les régularisations sont dans dataToSave
+                const empInSave = dataToSave.employees.find(e => e.id === employee.id);
+                console.log('🔍 DEBUG SAVE - Régularisations dans dataToSave:', empInSave ? JSON.stringify(empInSave.regularisations) : 'NON TROUVE');
+                
+                db.collection('plannings').doc('blink').set(dataToSave)
+                    .then(() => {
+                        console.log('✅ Régularisation sauvegardée sur Firebase');
+                        showToast('✅ Sauvegardé sur Firebase', 'success');
+                    })
+                    .catch((error) => {
+                        console.error('❌ Erreur sauvegarde régularisation:', error);
+                        showToast('⚠️ Erreur sauvegarde - Clique sur Sauver Cloud', 'error');
+                    });
+            } else {
+                showToast('⚠️ Firebase non connecté - Données non sauvegardées', 'error');
+            }
+            
+        } catch (error) {
+            console.error('Erreur régularisation:', error);
+            showToast('Erreur lors de la régularisation', 'error');
+        } finally {
+            // Réactiver le bouton dans tous les cas
+            const validateBtn = document.querySelector('#regularisationModal .btn.admin');
+            if (validateBtn) {
+                validateBtn.disabled = false;
+                validateBtn.textContent = '✅ Valider';
+            }
+        }
+    }
+
+    // ============================================
+    // RAZ SOLDES (ancienne fonction conservée)
+    // ============================================
+    function openRazSoldesModal() {
+        const select = document.getElementById('razSelection');
+        select.innerHTML = '<option value="tous">🌟 TOUS les employés</option>';
+        
+        globalState.employees.filter(emp => !emp.archived).forEach(emp => {
+            select.innerHTML += `<option value="${emp.id}">${emp.name}</option>`;
+        });
+        
+        document.getElementById('razSoldesModal').style.display = 'block';
+    }
+    
+    function executeRazSoldes() {
+        try {
+            const selection = document.getElementById('razSelection').value;
+            
+            if (selection === 'tous') {
+                if (!confirm('⚠️ Remettre à zéro le solde de TOUS les employés ?')) return;
+                
+                globalState.employees.forEach(emp => {
+                    emp.soldeRaz = new Date().toISOString();
+                });
+                showToast('Soldes de tous les employés remis à zéro', 'success');
+            } else {
+                const employee = globalState.employees.find(emp => emp.id === selection);
+                if (!employee) return;
+                
+                if (!confirm(`⚠️ Remettre à zéro le solde de ${employee.name} ?`)) return;
+                
+                employee.soldeRaz = new Date().toISOString();
+                showToast(`Solde de ${employee.name} remis à zéro`, 'success');
+            }
+            
+            closeModal();
+            updateSummary();
+            saveData();
+            
+        } catch (error) {
+            console.error('Erreur RAZ soldes:', error);
+            showToast('Erreur lors de la remise à zéro', 'error');
+        }
+    }
+
+    // ============================================
+    // EXPORT TEXTE SIMPLIFIÉ POUR COMPTABLE
+    // ============================================
+    function generateExportTexteForMonth(exportDate, selectedEmployeeIds) {
+        try {
+            const currentDate = exportDate || new Date(globalState.currentWeek);
+            const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+            const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+            const monthName = currentDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            
+            // Calculer les semaines COMPLÈTES dans le mois (lundi-dimanche)
+            let firstMonday = new Date(firstDayOfMonth);
+            while (firstMonday.getDay() !== 1) {
+                firstMonday.setDate(firstMonday.getDate() + 1);
+            }
+            let lastSunday = new Date(lastDayOfMonth);
+            while (lastSunday.getDay() !== 0) {
+                lastSunday.setDate(lastSunday.getDate() - 1);
+            }
+            const completeWeeks = Math.max(0, Math.floor((lastSunday - firstMonday) / (7 * 24 * 60 * 60 * 1000)) + 1);
+            
+            const jours = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+            
+            let texte = `═══════════════════════════════════════════════════════════════\n`;
+            texte += `                    RÉCAPITULATIF PAIE\n`;
+            texte += `                    ${monthName.toUpperCase()}\n`;
+            texte += `═══════════════════════════════════════════════════════════════\n\n`;
+            
+            // Filtrer les employés selon la sélection
+            let activeEmployees = globalState.employees.filter(emp => !emp.archived);
+            
+            // Créer un map des primes par employé
+            const primesMap = {};
+            if (selectedEmployeeIds && selectedEmployeeIds.length > 0) {
+                // Nouveau format: [{id, prime}, ...]
+                if (typeof selectedEmployeeIds[0] === 'object') {
+                    selectedEmployeeIds.forEach(item => {
+                        primesMap[item.id] = item.prime || 0;
+                    });
+                    const selectedIds = selectedEmployeeIds.map(item => item.id);
+                    activeEmployees = activeEmployees.filter(emp => selectedIds.includes(emp.id));
+                } else {
+                    // Ancien format: [id, id, ...]
+                    activeEmployees = activeEmployees.filter(emp => selectedEmployeeIds.includes(emp.id));
+                }
+            }
+            
+            activeEmployees.forEach(employee => {
+                const contractHours = employee.contractHours || 35;
+                const primeExceptionnelle = primesMap[employee.id] || 0;
+                
+                // Structure pour stocker les données par semaine
+                let weeksData = [];
+                let totalNormalHours = 0;
+                let totalDimanchesHours = 0;
+                let totalFeriesHours = 0;
+                let totalAbsencesHours = 0;
+                let totalRetardMinutes = 0;
+                let allDimanchesDetails = [];
+                let allFeriesDetails = [];
+                let allAbsencesDetails = [];
+                let allRetardsDetails = [];
+                let allCongesDetails = [];
+                
+                // ═══════════════════════════════════════════════════════════
+                // COMPTAGE SUR TOUT LE MOIS (1er au dernier jour)
+                // Pour : jours travaillés, fériés, dimanches
+                // ═══════════════════════════════════════════════════════════
+                let totalDaysWorkedFullMonth = 0;
+                let totalFeriesFullMonth = [];
+                let totalDimanchesFullMonth = [];
+                
+                // Parcourir chaque jour du mois complet
+                let currentDayCheck = new Date(firstDayOfMonth);
+                while (currentDayCheck <= lastDayOfMonth) {
+                    // Trouver la clé de semaine pour ce jour
+                    const dayOfWeek = currentDayCheck.getDay();
+                    const mondayOfWeek = new Date(currentDayCheck);
+                    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+                    mondayOfWeek.setDate(mondayOfWeek.getDate() + diffToMonday);
+                    
+                    const year = mondayOfWeek.getFullYear();
+                    const firstDayOfYear = new Date(year, 0, 1);
+                    const pastDays = (mondayOfWeek - firstDayOfYear) / 86400000;
+                    const weekNum = Math.ceil((pastDays + firstDayOfYear.getDay() + 1) / 7);
+                    const weekKeyCheck = `${year}-W${weekNum}`;
+                    
+                    const dayIndexInWeek = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+                    
+                    if (employee.planning && employee.planning[weekKeyCheck] && employee.planning[weekKeyCheck][dayIndexInWeek]) {
+                        const dayShifts = employee.planning[weekKeyCheck][dayIndexInWeek];
+                        const isDimanche = currentDayCheck.getDay() === 0;
+                        const ferie = isJourFerie(currentDayCheck);
+                        const dateStr = currentDayCheck.toLocaleDateString('fr-FR');
+                        
+                        let hasWorkThisDay = false;
+                        let dayWorkHours = 0;
+                        
+                        dayShifts.forEach(shift => {
+                            if (shift.type === 'work' && shift.hours) {
+                                hasWorkThisDay = true;
+                                dayWorkHours += parseHours(shift.hours);
+                            }
+                            if (['cours', 'conges', 'ferie'].includes(shift.type) && shift.hours) {
+                                hasWorkThisDay = true;
+                            }
+                        });
+                        
+                        if (hasWorkThisDay) {
+                            totalDaysWorkedFullMonth++;
+                            
+                            // Compter fériés travaillés sur tout le mois
+                            if (ferie && dayWorkHours > 0) {
+                                totalFeriesFullMonth.push({ date: dateStr, ferie: ferie.nom, hours: dayWorkHours });
+                            }
+                            // Compter dimanches travaillés sur tout le mois
+                            if (isDimanche && dayWorkHours > 0) {
+                                totalDimanchesFullMonth.push({ date: dateStr, hours: dayWorkHours });
+                            }
+                        }
+                    }
+                    
+                    currentDayCheck.setDate(currentDayCheck.getDate() + 1);
+                }
+                
+                // ═══════════════════════════════════════════════════════════
+                // PARCOURS DES SEMAINES COMPLÈTES (pour calcul heures conventionnelles)
+                // ═══════════════════════════════════════════════════════════
+                
+                // Parcourir chaque semaine du mois
+                let weekStart = new Date(firstMonday);
+                let weekNumber = 1;
+                
+                while (weekStart <= lastSunday) {
+                    const weekEnd = new Date(weekStart);
+                    weekEnd.setDate(weekEnd.getDate() + 6);
+                    
+                    // Calculer la clé de semaine
+                    const year = weekStart.getFullYear();
+                    const firstDayOfYear = new Date(year, 0, 1);
+                    const pastDays = (weekStart - firstDayOfYear) / 86400000;
+                    const weekNum = Math.ceil((pastDays + firstDayOfYear.getDay() + 1) / 7);
+                    const weekKey = `${year}-W${weekNum}`;
+                    
+                    let weekNormalHours = 0;
+                    let weekDimanchesHours = 0;
+                    let weekFeriesHours = 0;
+                    let weekAbsencesHours = 0;
+                    let weekRetardMinutes = 0;
+                    let weekDimanchesDetails = [];
+                    let weekFeriesDetails = [];
+                    let weekAbsencesDetails = [];
+                    
+                    if (employee.planning && employee.planning[weekKey]) {
+                        for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+                            const dayShifts = employee.planning[weekKey][dayIndex];
+                            if (!dayShifts) continue;
+                            
+                            const shiftDate = new Date(weekStart);
+                            shiftDate.setDate(shiftDate.getDate() + dayIndex);
+                            
+                            if (shiftDate.getMonth() !== currentDate.getMonth()) continue;
+                            
+                            const dateStr = shiftDate.toLocaleDateString('fr-FR');
+                            const jourNom = jours[shiftDate.getDay()];
+                            const isDimanche = shiftDate.getDay() === 0;
+                            const ferie = isJourFerie(shiftDate);
+                            
+                            // Heures de base pour un jour férié selon contrat (7h pour 35h, 8h pour 39h)
+                            const heuresBaseJourFerie = contractHours >= 39 ? 8 : 7;
+                            
+                            dayShifts.forEach(shift => {
+                                // Heures de travail
+                                if (shift.type === 'work' && shift.hours) {
+                                    const hours = parseHours(shift.hours);
+                                    
+                                    if (isDimanche) {
+                                        // Dimanche travaillé = UNIQUEMENT à majorer (pas dans les heures conventionnelles)
+                                        weekDimanchesHours += hours;
+                                        weekDimanchesDetails.push({ date: dateStr, hours: hours, text: shift.text });
+                                    } else if (ferie) {
+                                        // Férié travaillé :
+                                        // 1. Ajouter la BASE conventionnelle (7h ou 8h) aux heures normales
+                                        weekNormalHours += heuresBaseJourFerie;
+                                        // 2. Lister les heures RÉELLEMENT travaillées pour majoration
+                                        weekFeriesHours += hours;
+                                        weekFeriesDetails.push({ date: dateStr, ferie: ferie.nom, hours: hours, text: shift.text });
+                                    } else {
+                                        // Heures normales
+                                        weekNormalHours += hours;
+                                    }
+                                }
+                                
+                                // Cours (heures normales)
+                                if (shift.type === 'cours' && shift.hours) {
+                                    weekNormalHours += parseHours(shift.hours);
+                                }
+                                
+                                // Congés (heures normales)
+                                if (shift.type === 'conges' && shift.hours) {
+                                    weekNormalHours += parseHours(shift.hours);
+                                    allCongesDetails.push(`  • ${dateStr} (${jourNom}) - ${shift.hours}`);
+                                }
+                                
+                                // Férié non travaillé (heures normales - payé automatiquement)
+                                if (shift.type === 'ferie' && shift.hours) {
+                                    weekNormalHours += parseHours(shift.hours);
+                                }
+                                
+                                // Absences
+                                if (shift.type === 'absent') {
+                                    const absHours = shift.hours ? parseHours(shift.hours) : 7;
+                                    weekAbsencesHours += absHours;
+                                    weekAbsencesDetails.push({ date: dateStr, jour: jourNom, hours: absHours });
+                                }
+                                
+                                // Retards
+                                if (shift.type === 'retard' && shift.retardMinutes) {
+                                    const retardMinsValue = parseInt(shift.retardMinutes) || 0;
+                                    weekRetardMinutes += retardMinsValue;
+                                    const h = Math.floor(retardMinsValue / 60);
+                                    const m = retardMinsValue % 60;
+                                    const duree = h > 0 ? `${h}h${m > 0 ? m.toString().padStart(2, '0') : ''}` : `${m}min`;
+                                    allRetardsDetails.push(`  • ${dateStr} (${jourNom}) : -${duree}${shift.motif ? ` (${shift.motif})` : ''}`);
+                                }
+                            });
+                        }
+                    }
+                    
+                    // Stocker les données de la semaine
+                    const weekStartStr = weekStart.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+                    const weekEndStr = weekEnd.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+                    
+                    const weekRetardHours = weekRetardMinutes / 60;
+                    // Solde = heures normales - retards - contrat (SANS dim/fériés)
+                    const weekEffectiveNormal = weekNormalHours - weekRetardHours;
+                    const weekSolde = weekEffectiveNormal - contractHours;
+                    
+                    weeksData.push({
+                        number: weekNumber,
+                        range: `${weekStartStr} - ${weekEndStr}`,
+                        normalHours: weekNormalHours,
+                        effectiveHours: weekEffectiveNormal,
+                        retardHours: weekRetardHours,
+                        dimanchesHours: weekDimanchesHours,
+                        feriesHours: weekFeriesHours,
+                        absencesHours: weekAbsencesHours,
+                        retardMinutes: weekRetardMinutes,
+                        solde: weekSolde,
+                        dimanchesDetails: weekDimanchesDetails,
+                        feriesDetails: weekFeriesDetails,
+                        absencesDetails: weekAbsencesDetails
+                    });
+                    
+                    // Cumuler les totaux
+                    totalNormalHours += weekNormalHours;
+                    totalDimanchesHours += weekDimanchesHours;
+                    totalFeriesHours += weekFeriesHours;
+                    totalAbsencesHours += weekAbsencesHours;
+                    totalRetardMinutes += weekRetardMinutes;
+                    
+                    // Ajouter aux détails globaux
+                    weekDimanchesDetails.forEach(d => allDimanchesDetails.push(d));
+                    weekFeriesDetails.forEach(d => allFeriesDetails.push(d));
+                    weekAbsencesDetails.forEach(d => allAbsencesDetails.push(d));
+                    
+                    weekStart.setDate(weekStart.getDate() + 7);
+                    weekNumber++;
+                }
+                
+                // Générer le texte pour cet employé
+                texte += `═══════════════════════════════════════════════════════════════\n`;
+                texte += `                    👤 ${employee.name.toUpperCase()}\n`;
+                texte += `                    Contrat : ${contractHours}h/semaine\n`;
+                texte += `═══════════════════════════════════════════════════════════════\n\n`;
+                
+                // Détail par semaine
+                weeksData.forEach(week => {
+                    texte += `📅 SEMAINE ${week.number} (${week.range})\n`;
+                    
+                    // Afficher heures travaillées (avec retards si présents)
+                    if (week.retardHours > 0) {
+                        texte += `   Heures travaillées : ${formatHours(week.normalHours)} - ${formatHours(week.retardHours)} retard = ${formatHours(week.effectiveHours)}\n`;
+                    } else {
+                        texte += `   Heures travaillées : ${formatHours(week.effectiveHours)}\n`;
+                    }
+                    texte += `   Heures attendues   : ${formatHours(contractHours)}\n`;
+                    
+                    if (week.absencesDetails.length > 0) {
+                        texte += `   Absences           : ${week.absencesDetails.length} jour(s) (${formatHours(week.absencesHours)})\n`;
+                    }
+                    
+                    if (week.feriesDetails.length > 0) {
+                        week.feriesDetails.forEach(f => {
+                            texte += `   Férié travaillé    : 1 jour le ${f.date} (${formatHours(f.hours)}) ← À MAJORER\n`;
+                        });
+                    }
+                    
+                    if (week.dimanchesDetails.length > 0) {
+                        week.dimanchesDetails.forEach(d => {
+                            texte += `   Dimanche travaillé : 1 jour le ${d.date} (${formatHours(d.hours)}) ← À MAJORER\n`;
+                        });
+                    }
+                    
+                    const soldeText = week.solde >= 0 ? `+${formatHours(week.solde)}` : formatHours(week.solde);
+                    texte += `   Solde semaine      : ${soldeText}\n\n`;
+                });
+                
+                // ════════════════════════════════════════════════════════════
+                // PARTIE 2 : ACTIONS COMPTABLE (simplifié)
+                // ════════════════════════════════════════════════════════════
+                
+                const expectedHours = completeWeeks * contractHours;
+                const totalRetardHours = totalRetardMinutes / 60;
+                const totalEffectiveNormal = totalNormalHours - totalRetardHours;
+                const soldeHoraireBrut = totalEffectiveNormal - expectedHours;
+                
+                // Calculer les régularisations du mois
+                const targetMonthKey = `${currentDate.getFullYear()}-${(currentDate.getMonth() + 1).toString().padStart(2, '0')}`;
+                let totalRegularisations = 0;
+                let heuresPayees = 0;
+                let heuresRecuperees = 0;
+                
+                if (employee.regularisations && employee.regularisations.length > 0) {
+                    employee.regularisations.forEach(reg => {
+                        let isThisMonth = false;
+                        if (reg.mois) {
+                            isThisMonth = reg.mois === targetMonthKey;
+                        } else {
+                            const regDate = new Date(reg.date);
+                            isThisMonth = regDate.getMonth() === currentDate.getMonth() && regDate.getFullYear() === currentDate.getFullYear();
+                        }
+                        
+                        if (isThisMonth) {
+                            totalRegularisations += reg.heures;
+                            if (reg.type === 'paye') heuresPayees += Math.abs(reg.heures);
+                            if (reg.type === 'recupere') heuresRecuperees += Math.abs(reg.heures);
+                        }
+                    });
+                }
+                
+                const soldeHoraire = soldeHoraireBrut + totalRegularisations;
+                
+                texte += `┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n`;
+                texte += `┃                    💼 ACTIONS COMPTABLE                     ┃\n`;
+                texte += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+                
+                // Solde horaire simplifié - soit à payer soit à déduire
+                if (soldeHoraire > 0) {
+                    texte += `   📈 Solde horaire à payer    : +${formatHours(soldeHoraire)}\n`;
+                } else if (soldeHoraire < 0) {
+                    texte += `   📉 Solde horaire à déduire  : ${formatHours(soldeHoraire)}\n`;
+                } else {
+                    texte += `   ✅ Solde horaire            : 0h (équilibré)\n`;
+                }
+                
+                // Si régularisation payée ce mois
+                if (heuresPayees > 0) {
+                    texte += `   💰 Régularisation payée     : ${formatHours(heuresPayees)} (déjà inclus ci-dessus)\n`;
+                }
+                
+                texte += `\n`;
+                
+                // Jours exceptionnels travaillés
+                if (totalFeriesFullMonth.length > 0 || totalDimanchesFullMonth.length > 0) {
+                    texte += `   📆 JOURS EXCEPTIONNELS TRAVAILLÉS\n`;
+                    texte += `   ─────────────────────────────────\n`;
+                    texte += `   Jours travaillés     : ${totalDaysWorkedFullMonth} jours (du 1er au ${lastDayOfMonth.getDate()})\n`;
+                    
+                    // Jours fériés travaillés
+                    if (totalFeriesFullMonth.length > 0) {
+                        const totalFeriesHoursMonth = totalFeriesFullMonth.reduce((sum, f) => sum + f.hours, 0);
+                        const joursFeries = totalFeriesFullMonth.map(f => `${f.date} (${formatHours(f.hours)})`).join(', ');
+                        texte += `   🎌 FÉRIÉS TRAVAILLÉS  : ${totalFeriesFullMonth.length} jour${totalFeriesFullMonth.length > 1 ? 's' : ''} - ${joursFeries}\n`;
+                        texte += `      → Total à majorer : ${formatHours(totalFeriesHoursMonth)}\n`;
+                    }
+                    
+                    // Dimanches travaillés
+                    if (totalDimanchesFullMonth.length > 0) {
+                        const totalDimHoursMonth = totalDimanchesFullMonth.reduce((sum, d) => sum + d.hours, 0);
+                        const joursDim = totalDimanchesFullMonth.map(d => `${d.date} (${formatHours(d.hours)})`).join(', ');
+                        texte += `   📅 DIMANCHES TRAVAILLÉS : ${totalDimanchesFullMonth.length} jour${totalDimanchesFullMonth.length > 1 ? 's' : ''} - ${joursDim}\n`;
+                        texte += `      → Total à majorer : ${formatHours(totalDimHoursMonth)}\n`;
+                    }
+                    
+                    texte += `\n`;
+                }
+                
+                // Prime exceptionnelle
+                if (primeExceptionnelle > 0) {
+                    texte += `   💰 PRIME EXCEPTIONNELLE : ${primeExceptionnelle.toFixed(2)}€ NET\n\n`;
+                }
+                
+                // Solde cumulé (pour information) - optionnel
+                const soldeCumule = calculateCumulativeSolde(employee, currentDate.getMonth(), currentDate.getFullYear());
+                if (soldeCumule !== 0) {
+                    const soldeCumuleText = soldeCumule >= 0 ? `+${formatHours(soldeCumule)}` : formatHours(soldeCumule);
+                    texte += `   ℹ️  Solde cumulé : ${soldeCumuleText}\n`;
+                }
+                
+                texte += `\n`;
+            });
+            
+            texte += `═══════════════════════════════════════════════════════════════\n`;
+            texte += `Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}\n`;
+            texte += `═══════════════════════════════════════════════════════════════\n`;
+            
+            return texte;
+            
+        } catch (error) {
+            console.error('Erreur export texte:', error);
+            showToast('Erreur lors de l\'export', 'error');
+            return '';
+        }
+    }
+
+    // ============================================
+    // EXPORT COMPTABLE
+    // ============================================
+    function openExportComptableModal() {
+        // Remplir la liste des employés
+        const select = document.getElementById('exportEmployes');
+        select.innerHTML = '<option value="tous">Tous les employés</option>';
+        
+        globalState.employees.filter(emp => !emp.archived).forEach(emp => {
+            select.innerHTML += `<option value="${emp.id}">${emp.name}</option>`;
+        });
+        
+        // Gérer l'affichage des dates personnalisées
+        document.getElementById('exportPeriode').addEventListener('change', function() {
+            document.getElementById('periodePersonnalisee').style.display = 
+                this.value === 'personnalise' ? 'block' : 'none';
+        });
+        
+        // Définir les dates par défaut
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        
+        document.getElementById('exportDateDebut').value = firstDay.toISOString().split('T')[0];
+        document.getElementById('exportDateFin').value = lastDay.toISOString().split('T')[0];
+        
+        document.getElementById('exportComptableModal').style.display = 'block';
+    }
+    
+    function generateExportComptable() {
+        try {
+            const periode = document.getElementById('exportPeriode').value;
+            const employeSelection = document.getElementById('exportEmployes').value;
+            
+            let dateDebut, dateFin, periodeLabel;
+            const now = new Date();
+            
+            if (periode === 'mois') {
+                dateDebut = new Date(now.getFullYear(), now.getMonth(), 1);
+                dateFin = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                periodeLabel = dateDebut.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            } else if (periode === 'moisPrecedent') {
+                dateDebut = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                dateFin = new Date(now.getFullYear(), now.getMonth(), 0);
+                periodeLabel = dateDebut.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+            } else {
+                dateDebut = new Date(document.getElementById('exportDateDebut').value);
+                dateFin = new Date(document.getElementById('exportDateFin').value);
+                periodeLabel = `${dateDebut.toLocaleDateString('fr-FR')} au ${dateFin.toLocaleDateString('fr-FR')}`;
+            }
+            
+            // Filtrer les employés
+            let employees = globalState.employees.filter(emp => !emp.archived);
+            if (employeSelection !== 'tous') {
+                employees = employees.filter(emp => emp.id === employeSelection);
+            }
+            
+            // Créer le workbook Excel
+            const wb = XLSX.utils.book_new();
+            
+            // ===== FEUILLE 1 : RÉCAP GLOBAL =====
+            const recapData = [
+                ['RÉCAPITULATIF PAIE - ' + periodeLabel.toUpperCase()],
+                ['Généré le ' + new Date().toLocaleDateString('fr-FR') + ' à ' + new Date().toLocaleTimeString('fr-FR')],
+                [],
+                ['Employé', 'Contrat (h/sem)', 'H. Travaillées', 'H. Retard', 'H. Effectives', 'H. Sup', 'Absences', 'Congés', 'Dimanches', 'Fériés', 'Solde']
+            ];
+            
+            employees.forEach(emp => {
+                const stats = getEmployeeStats(emp, dateDebut, dateFin);
+                recapData.push([
+                    emp.name,
+                    emp.contractHours || 35,
+                    stats.totalHours.toFixed(2),
+                    stats.retardHours.toFixed(2),
+                    stats.effectiveHours.toFixed(2),
+                    stats.overtime.toFixed(2),
+                    stats.absences,
+                    stats.conges,
+                    stats.dimanches,
+                    stats.feries,
+                    (stats.solde >= 0 ? '+' : '') + stats.solde.toFixed(2)
+                ]);
+            });
+            
+            const wsRecap = XLSX.utils.aoa_to_sheet(recapData);
+            wsRecap['!cols'] = [
+                {wch: 20}, {wch: 15}, {wch: 15}, {wch: 12}, {wch: 15}, 
+                {wch: 10}, {wch: 10}, {wch: 10}, {wch: 12}, {wch: 10}, {wch: 10}
+            ];
+            XLSX.utils.book_append_sheet(wb, wsRecap, 'Récap Global');
+            
+            // ===== FEUILLE 2 : DÉTAIL PAR EMPLOYÉ =====
+            employees.forEach(emp => {
+                const detailData = [
+                    [`DÉTAIL - ${emp.name.toUpperCase()}`],
+                    [`Période: ${periodeLabel}`],
+                    [`Contrat: ${emp.contractHours || 35}h/semaine`],
+                    [],
+                    ['Date', 'Jour', 'Créneau', 'H. Travaillées', 'Retard', 'Type', 'Dimanche', 'Férié', 'Observation']
+                ];
+                
+                const details = getEmployeeDetailedStats(emp, dateDebut, dateFin);
+                details.forEach(d => {
+                    detailData.push([
+                        d.date,
+                        d.jour,
+                        d.creneau,
+                        d.heures,
+                        d.retard,
+                        d.type,
+                        d.dimanche ? '✓' : '',
+                        d.ferie ? '✓' : '',
+                        d.observation
+                    ]);
+                });
+                
+                // Ligne de total
+                const stats = getEmployeeStats(emp, dateDebut, dateFin);
+                detailData.push([]);
+                detailData.push(['TOTAL', '', '', stats.totalHours.toFixed(2), stats.retardHours.toFixed(2), '', stats.dimanches, stats.feries, '']);
+                
+                const wsDetail = XLSX.utils.aoa_to_sheet(detailData);
+                wsDetail['!cols'] = [
+                    {wch: 12}, {wch: 10}, {wch: 15}, {wch: 15}, {wch: 10},
+                    {wch: 12}, {wch: 10}, {wch: 10}, {wch: 25}
+                ];
+                XLSX.utils.book_append_sheet(wb, wsDetail, emp.name.substring(0, 30));
+            });
+            
+            // ===== FEUILLE 3 : CALENDRIER ÉVÉNEMENTS =====
+            const eventsData = [
+                ['CALENDRIER DES ÉVÉNEMENTS - ' + periodeLabel.toUpperCase()],
+                [],
+                ['Date', 'Employé', 'Type', 'Détail']
+            ];
+            
+            const allEvents = getAllEvents(employees, dateDebut, dateFin);
+            allEvents.forEach(evt => {
+                eventsData.push([evt.date, evt.employe, evt.type, evt.detail]);
+            });
+            
+            const wsEvents = XLSX.utils.aoa_to_sheet(eventsData);
+            wsEvents['!cols'] = [{wch: 12}, {wch: 20}, {wch: 15}, {wch: 40}];
+            XLSX.utils.book_append_sheet(wb, wsEvents, 'Événements');
+            
+            // Télécharger le fichier
+            const fileName = `Export_Paie_${periodeLabel.replace(/\s/g, '_')}.xlsx`;
+            XLSX.writeFile(wb, fileName);
+            
+            closeModal();
+            showToast(`Export "${fileName}" généré avec succès !`, 'success');
+            
+        } catch (error) {
+            console.error('Erreur export comptable:', error);
+            showToast('Erreur lors de la génération de l\'export', 'error');
+        }
+    }
+    
+    function getEmployeeStats(employee, dateDebut, dateFin) {
+        let totalHours = 0;
+        let retardHours = 0;
+        let absences = 0;
+        let conges = 0;
+        let repos = 0;
+        let dimanches = 0;
+        let feries = 0;
+        let workDays = 0;
+        
+        const contractHours = employee.contractHours || 35;
+        
+        // Parcourir chaque jour de la période
+        let currentDate = new Date(dateDebut);
+        while (currentDate <= dateFin) {
+            const weekStart = getWeekStart(currentDate);
+            const year = weekStart.getFullYear();
+            const firstDay = new Date(year, 0, 1);
+            const pastDays = (weekStart - firstDay) / 86400000;
+            const weekNumber = Math.ceil((pastDays + firstDay.getDay() + 1) / 7);
+            const weekKey = `${year}-W${weekNumber}`;
+            const dayIndex = (currentDate.getDay() + 6) % 7; // Lundi = 0
+            
+            if (employee.planning && employee.planning[weekKey] && employee.planning[weekKey][dayIndex]) {
+                const dayShifts = employee.planning[weekKey][dayIndex];
+                let dayHasWork = false;
+                
+                dayShifts.forEach(shift => {
+                    switch(shift.type) {
+                        case 'work':
+                            if (shift.hours) {
+                                const hours = parseHours(shift.hours);
+                                totalHours += hours;
+                                dayHasWork = true;
+                                
+                                // Vérifier dimanche et férié
+                                if (isDimanche(currentDate)) dimanches++;
+                                const ferie = isJourFerie(currentDate);
+                                if (ferie) feries++;
+                            }
+                            break;
+                        case 'retard':
+                            if (shift.retardMinutes) {
+                                retardHours += (parseInt(shift.retardMinutes) || 0) / 60;
+                            }
+                            break;
+                        case 'absent':
+                            absences++;
+                            break;
+                        case 'conges':
+                            conges++;
+                            break;
+                        case 'repos':
+                            repos++;
+                            break;
+                    }
+                });
+                
+                if (dayHasWork) workDays++;
+            }
+            
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+        
+        // Calculer les heures effectives et overtime
+        const effectiveHours = totalHours - retardHours;
+        const weeksInPeriod = Math.ceil(workDays / 5) || 1;
+        const expectedHours = weeksInPeriod * contractHours;
+        const overtime = Math.max(0, effectiveHours - expectedHours);
+        const solde = effectiveHours - expectedHours;
+        
+        return {
+            totalHours,
+            retardHours,
+            effectiveHours,
+            expectedHours,
+            overtime,
+            absences,
+            conges,
+            repos,
+            dimanches,
+            feries,
+            workDays,
+            solde
+        };
+    }
+    
+    function getEmployeeDetailedStats(employee, dateDebut, dateFin) {
+        const details = [];
+        const jours = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+        
+        let currentDate = new Date(dateDebut);
+        while (currentDate <= dateFin) {
+            const weekStart = getWeekStart(currentDate);
+            const year = weekStart.getFullYear();
+            const firstDay = new Date(year, 0, 1);
+            const pastDays = (weekStart - firstDay) / 86400000;
+            const weekNumber = Math.ceil((pastDays + firstDay.getDay() + 1) / 7);
+            const weekKey = `${year}-W${weekNumber}`;
+            const dayIndex = (currentDate.getDay() + 6) % 7;
+            
+            const dateStr = currentDate.toLocaleDateString('fr-FR');
+            const jourStr = jours[currentDate.getDay()];
+            const isDim = isDimanche(currentDate);
+            const ferie = isJourFerie(currentDate);
+            
+            if (employee.planning && employee.planning[weekKey] && employee.planning[weekKey][dayIndex]) {
+                const dayShifts = employee.planning[weekKey][dayIndex];
+                
+                dayShifts.forEach(shift => {
+                    let creneau = '';
+                    let heures = '';
+                    let retard = '';
+                    let type = '';
+                    let observation = '';
+                    
+                    switch(shift.type) {
+                        case 'work':
+                            creneau = shift.text || '';
+                            heures = shift.hours || '';
+                            type = 'Travail';
+                            if (isDim) observation = 'Majoration dimanche';
+                            if (ferie) observation = `Férié (${ferie.nom})`;
+                            break;
+                        case 'retard':
+                            type = 'Retard';
+                            const mins = shift.retardMinutes || 0;
+                            retard = `-${Math.floor(mins/60)}h${(mins%60).toString().padStart(2,'0')}`;
+                            observation = shift.motif || '';
+                            break;
+                        case 'absent':
+                            type = 'Absence';
+                            observation = shift.text || 'Non justifiée';
+                            break;
+                        case 'conges':
+                            type = 'Congé';
+                            break;
+                        case 'repos':
+                            type = 'Repos';
+                            break;
+                        case 'cours':
+                            type = 'Formation';
+                            break;
+                        default:
+                            type = shift.type;
+                            observation = shift.text || '';
+                    }
+                    
+                    details.push({
+                        date: dateStr,
+                        jour: jourStr,
+                        creneau,
+                        heures,
+                        retard,
+                        type,
+                        dimanche: isDim && shift.type === 'work',
+                        ferie: ferie && shift.type === 'work' ? ferie.nom : null,
+                        observation
+                    });
+                });
+            }
+            
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+        
+        return details;
+    }
+    
+    function getAllEvents(employees, dateDebut, dateFin) {
+        const events = [];
+        
+        // Ajouter les jours fériés
+        const feries = getJoursFeries(dateDebut.getFullYear());
+        feries.forEach(f => {
+            if (f.date >= dateDebut && f.date <= dateFin) {
+                events.push({
+                    date: f.date.toLocaleDateString('fr-FR'),
+                    employe: 'TOUS',
+                    type: '🎌 Férié',
+                    detail: f.nom
+                });
+            }
+        });
+        
+        // Parcourir les employés
+        employees.forEach(emp => {
+            let currentDate = new Date(dateDebut);
+            while (currentDate <= dateFin) {
+                const weekStart = getWeekStart(currentDate);
+                const year = weekStart.getFullYear();
+                const firstDay = new Date(year, 0, 1);
+                const pastDays = (weekStart - firstDay) / 86400000;
+                const weekNumber = Math.ceil((pastDays + firstDay.getDay() + 1) / 7);
+                const weekKey = `${year}-W${weekNumber}`;
+                const dayIndex = (currentDate.getDay() + 6) % 7;
+                
+                if (emp.planning && emp.planning[weekKey] && emp.planning[weekKey][dayIndex]) {
+                    emp.planning[weekKey][dayIndex].forEach(shift => {
+                        const dateStr = currentDate.toLocaleDateString('fr-FR');
+                        
+                        if (shift.type === 'work' && isDimanche(currentDate)) {
+                            events.push({
+                                date: dateStr,
+                                employe: emp.name,
+                                type: '📅 Dimanche',
+                                detail: `${shift.text} (${shift.hours})`
+                            });
+                        }
+                        
+                        if (shift.type === 'retard') {
+                            const mins = shift.retardMinutes || 0;
+                            events.push({
+                                date: dateStr,
+                                employe: emp.name,
+                                type: '⏰ Retard',
+                                detail: `${Math.floor(mins/60)}h${(mins%60).toString().padStart(2,'0')}${shift.motif ? ' - ' + shift.motif : ''}`
+                            });
+                        }
+                        
+                        if (shift.type === 'absent') {
+                            events.push({
+                                date: dateStr,
+                                employe: emp.name,
+                                type: '❌ Absence',
+                                detail: shift.text || 'Non justifiée'
+                            });
+                        }
+                        
+                        if (shift.type === 'conges') {
+                            events.push({
+                                date: dateStr,
+                                employe: emp.name,
+                                type: '🏖️ Congé',
+                                detail: 'Journée complète'
+                            });
+                        }
+                    });
+                }
+                
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+        });
+        
+        // Trier par date
+        events.sort((a, b) => {
+            const dateA = a.date.split('/').reverse().join('');
+            const dateB = b.date.split('/').reverse().join('');
+            return dateA.localeCompare(dateB);
+        });
+        
+        return events;
+    }
+    
+    function getWeekStart(date) {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        d.setDate(d.getDate() + diff);
+        return d;
+    }
+
     
 </script>
 </body>
 </html>
-
